@@ -1,0 +1,20 @@
+# Only needed if you set FOOTBALL_PROVIDER=sofascore.
+# Not in requirements.txt on purpose: this pulls in a full Playwright/Chromium
+# browser stack (100s of MB), which the default free-first setup does
+# not need. See app/data_providers.py: SofascoreProvider for what this buys you
+# (scores/fixtures only, no odds) and what it costs (a real headless browser
+# used to get past Sofascore's bot protection).
+EasySoccerData==0.0.8
+playwright==1.56.0
+
+# For FOOTBALL_PROVIDER=sofascore, after installing the above, you must also
+# download a browser binary once:
+#   playwright install chromium
+# Or point SOFASCORE_BROWSER_PATH at an existing Chrome/Chromium executable.
+
+# Only needed if you configure the APPWRITE_* settings in .env to sync
+# profiles/tips into Appwrite (see app/appwrite_sync.py and the Appwrite
+# setup guide). Not required for the app's normal operation — SQLite stays
+# the source of truth either way.
+appwrite==24.0.0
+

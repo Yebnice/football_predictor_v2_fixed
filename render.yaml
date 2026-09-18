@@ -1,0 +1,66 @@
+# Render Blueprint for the FastAPI backend ONLY. The Streamlit frontend
+# (frontend/streamlit_app.py) is deployed separately on Streamlit Community
+# Cloud instead — see DEPLOY_RENDER.md for why (Render can run it fine too,
+# if you'd rather keep everything on one provider; the guide covers both).
+services:
+  - type: web
+    name: football-predictor-api
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python -m uvicorn app.api:app --host 0.0.0.0 --port $PORT"
+    # NOTE: "python -m uvicorn ..." (not the bare "uvicorn ..." console script) is
+    # required here. When uvicorn is invoked as an installed console script, Python
+    # sets sys.path[0] to the script's own directory (.venv/bin), NOT the working
+    # directory — so the local `app` package is invisible and import fails with
+    # "ModuleNotFoundError: No module named 'app'", even though app/__init__.py
+    # exists right there in the project root. `python -m` explicitly puts the
+    # current working directory on sys.path, which fixes it.
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"   # pin below Render's newest default — pydantic-core 2.33.2
+        # has no prebuilt wheel for very new Python releases, which forces pip to
+        # compile it from Rust source via maturin. That compile then fails on
+        # Render because the build container's Cargo registry cache is read-only.
+        # 3.12 has prebuilt wheels for every pin in requirements.txt, so nothing
+        # needs to build from source. (runtime.txt sets the same pin as a backup.)
+      - key: APP_ENV
+        value: production
+      - key: FOOTBALL_PROVIDER
+        value: auto   # uses the configured real-provider chain
+      - key: FOOTBALL_PROVIDER_CHAIN
+        value: thesportsdb,api-football,football-data,livescorefootball,sofascore
+      - key: FOOTBALL_PROVIDER_MODE
+        value: fallback
+      - key: FOOTBALL_DATA_API_KEY
+        sync: false
+      - key: THESPORTSDB_API_KEY
+        value: "123"
+      - key: THESPORTSDB_LEAGUE_ID
+        value: "4328"
+      - key: LIVESCOREFOOTBALL_LEAGUE
+        value: "eng.1"
+      - key: API_FOOTBALL_KEY
+        sync: false   # set in the Render dashboard, never commit real keys
+      - key: DB_PATH
+        sync: false
+        # MUST be a postgresql://... connection string on Render's free plan —
+        # free web services have no persistent disk (local files are wiped on
+        # every spin-down; confirmed via Render's own docs: render.com/docs/free).
+        # app/db.py will log a loud warning at startup if this is still a local
+        # path. Get a free, non-expiring Postgres from Supabase or Neon — see
+        # DEPLOY_RENDER.md. (Render's OWN free Postgres expires after 30 days;
+        # deliberately not recommending it for that reason.)
+      - key: AUTH_JWT_SECRET
+        generateValue: true   # Render generates a real random secret for you
+      - key: RNG_SALT
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false   # set to your Streamlit Cloud app's real URL once deployed
+      - key: GROQ_API_KEY
+        sync: false
+      - key: RATE_LIMIT_AUTH_PER_MINUTE
+        value: "10"
+      - key: RATE_LIMIT_DEFAULT_PER_MINUTE
+        value: "120"
