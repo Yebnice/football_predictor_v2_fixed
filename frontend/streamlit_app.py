@@ -223,16 +223,16 @@ def _get_cached_provider():
 
 provider = _get_cached_provider()
 
-def fetch_package_fixtures(start, end, required_count):
+def fetch_package_fixtures(start, end, required_count, selected_league_ids):
     # Normalize package requests to one UTC-day cache window so Daily, Weekly,
     # and Monthly reuse the same multi-league fixture fetch.
     pool_start = start.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     pool_end = pool_start + timedelta(days=31, hours=23, minutes=59, seconds=59)
     if hasattr(provider, "providers"):
         raw_target = {5: 10, 20: 40, 35: 70}.get(required_count, required_count)
-        rows = provider.fixtures(pool_start, pool_end, minimum=raw_target)
+        rows = provider.fixtures(pool_start, pool_end, league=",".join(selected_league_ids), minimum=raw_target)
     else:
-        rows = provider.fixtures(pool_start, pool_end)
+        rows = provider.fixtures(pool_start, pool_end, league=",".join(selected_league_ids)) if selected_league_ids else []
     return [fx for fx in rows if start <= fx.date <= end]
 engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_coles_rho)
 corners_cards_engine = CornersCardsEngine()
@@ -265,6 +265,17 @@ with st.sidebar:
         label_visibility="collapsed",
         key="prediction_package"
     )
+    league_options = [f"{league_id} — {name}" for league_id, name in MAJOR_LEAGUES.items()]
+    default_active_ids = [x.strip() for x in settings.api_football_leagues.split(",") if x.strip()]
+    default_active_labels = [label for label in league_options if label.split(" — ", 1)[0] in default_active_ids]
+    selected_league_labels = st.multiselect(
+        "Leagues to include",
+        league_options,
+        default=default_active_labels,
+        max_selections=max(1, settings.api_football_max_active_leagues),
+        help="The API-Football free plan has a 100 requests/day and 10 requests/minute cap. The active batch is limited; all major leagues remain available in the catalogue."
+    )
+    selected_league_ids = [label.split(" — ", 1)[0] for label in selected_league_labels]
 
     render_markdown('<div class="settings-group-label">Status</div>', unsafe_allow_html=True)
     active_provider_names = getattr(provider, "provider_names", [settings.football_provider])
@@ -318,7 +329,7 @@ else:
 # Fetch fixtures
 try:
     initial_required = {"Daily": 10, "Weekly": 40, "Monthly": 70}.get(pkg, 0)
-    fixtures = fetch_package_fixtures(start, end, initial_required) if initial_required else provider.fixtures(start, end, live=(pkg == "Live"))
+    fixtures = fetch_package_fixtures(start, end, initial_required, selected_league_ids) if initial_required else provider.fixtures(start, end, live=(pkg == "Live"), league=",".join(selected_league_ids) if selected_league_ids else None)
 except Exception as e:
     st.error(f"Failed to fetch fixtures: {str(e)}")
     fixtures = []
@@ -430,7 +441,7 @@ else:
             try:
                 with st.spinner("Generating predictions..."):
                     package_required = {"Daily": 5, "Weekly": 20, "Monthly": 35}.get(pkg, 0)
-                    package_fixtures = fetch_package_fixtures(start, end, package_required)
+                    package_fixtures = fetch_package_fixtures(start, end, package_required, selected_league_ids)
                     if pkg == "Daily":
                         generated = [slips.daily(package_fixtures)]
                     elif pkg == "Weekly":
