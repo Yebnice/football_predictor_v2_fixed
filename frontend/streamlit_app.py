@@ -228,7 +228,8 @@ def fetch_package_fixtures(start, end, required_count):
     # cannot supply enough matches for a package. Single providers keep their
     # normal behavior.
     if hasattr(provider, "providers"):
-        return provider.fixtures(start, end, minimum=required_count)
+        raw_target = {5: 10, 20: 40, 35: 70}.get(required_count, required_count)
+        return provider.fixtures(start, end, minimum=raw_target)
     return provider.fixtures(start, end)
 
 engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_coles_rho)
