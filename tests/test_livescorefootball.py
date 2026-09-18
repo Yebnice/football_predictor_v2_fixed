@@ -17,6 +17,54 @@ ASSUMED_FIXTURE_ROW = {
 
 
 class LivescoreFootballProviderTests(unittest.TestCase):
+    def test_fixtures_normalize_verified_nested_event_shape(self):
+        from app.data_providers import _normalize_livescorefootball_fixture
+        row = {
+            "id": "401879271",
+            "date": "2026-09-19T14:00:00Z",
+            "name": "Hull City at Newcastle United",
+            "shortName": "HUL @ NEW",
+            "season": {"year": 2026, "name": "2026-27 English Premier League"},
+            "status": {
+                "name": "STATUS_SCHEDULED",
+                "state": "pre",
+                "description": "Scheduled",
+                "shortDetail": "Sat, Sep 19, 2:00 PM"
+            },
+            "competitions": [{
+                "competitors": [
+                    {
+                        "homeAway": "home",
+                        "score": None,
+                        "team": {
+                            "source_id": "1",
+                            "displayName": "Newcastle United",
+                            "shortDisplayName": "Newcastle"
+                        }
+                    },
+                    {
+                        "homeAway": "away",
+                        "score": None,
+                        "team": {
+                            "source_id": "2",
+                            "displayName": "Hull City",
+                            "shortDisplayName": "Hull"
+                        }
+                    }
+                ],
+                "venue": {"displayName": "St. James' Park"}
+            }]
+        }
+        fx = _normalize_livescorefootball_fixture(row, "eng.1")
+        self.assertEqual(fx.fixture_id, "livescorefootball-eng.1-401879271")
+        self.assertEqual(fx.home_team, "Newcastle United")
+        self.assertEqual(fx.away_team, "Hull City")
+        self.assertEqual(fx.league, "Premier League")
+        self.assertEqual(fx.season, "2026")
+        self.assertEqual(fx.status, "pre")
+        self.assertIsNone(fx.home_score)
+        self.assertIsNone(fx.away_score)
+
     def _provider(self):
         return LivescoreFootballProvider(default_league="eng.1", cache_ttl_seconds=0)
 
