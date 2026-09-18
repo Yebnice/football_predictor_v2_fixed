@@ -30,17 +30,28 @@ from app.admin_board import bootstrap_admin, serialize_tip
 
 
 def _streamlit_secret(name: str, fallback: str = "") -> str:
-    """Read a Streamlit Cloud secret at runtime, falling back to Settings/env.
+    """Read an AI secret from Streamlit Cloud in several safe formats.
 
-    Streamlit secrets are exposed through st.secrets and are not guaranteed to
-    appear in os.environ, so pydantic-settings alone cannot reliably read them
-    on Streamlit Community Cloud.
+    Supported forms:
+      GROQ_API_KEY = "..."
+      groq_api_key = "..."
+      [groq]
+      api_key = "..."
     """
     try:
-        value = st.secrets.get(name, fallback)
+        secrets = st.secrets
+        value = secrets.get(name)
+        if value in (None, ""):
+            value = secrets.get(name.lower())
+        if value in (None, "") and name.upper() == "GROQ_API_KEY":
+            section = secrets.get("groq")
+            if isinstance(section, dict):
+                value = section.get("api_key") or section.get("GROQ_API_KEY")
+        if value in (None, ""):
+            value = fallback
     except Exception:
         value = fallback
-    return str(value or fallback or "").strip()
+    return str(value or "").strip()
 
 
 # Streamlit Cloud secrets are the authoritative runtime source for AI config.
