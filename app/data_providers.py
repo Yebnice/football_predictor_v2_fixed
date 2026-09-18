@@ -1172,33 +1172,120 @@ def _first(row: dict[str, Any], *keys: str, default: Any = None) -> Any:
 
 
 def _normalize_livescorefootball_fixture(row: dict[str, Any], league_slug: str) -> Fixture:
-    event_id = str(_first(row, "id", "eventId", "event_id", "matchId", default=""))
+    """Normalize the stable livescoreFootball event shape.
+
+    The service's current public documentation uses nested `home`/`away`
+    objects with `display_name`/`name`, nested scores, and a nested status
+    object. Keep compatibility with older flat aliases as well.
+    """
+    event_id = str(_first(row, "id", "eventId", "event_id", "matchId", default="")).strip()
+
     home = _first(row, "homeTeam", "home_team", "home", default={})
     away = _first(row, "awayTeam", "away_team", "away", default={})
-    home_name = home.get("name") if isinstance(home, dict) else str(home)
-    away_name = away.get("name") if isinstance(away, dict) else str(away)
+
+    def participant_name(value: Any) -> str:
+        if isinstance(value, dict):
+            return str(_first(
+                value, "display_name", "displayName", "name", "shortName", "teamName", default=""
+            )).strip()
+        return str(value or "").strip()
+
+    home_name = participant_name(home) or str(_first(
+        row, "homeTeamName", "home_team_name", "homeName", default=""
+    )).strip()
+    away_name = participant_name(away) or str(_first(
+        row, "awayTeamName", "away_team_name", "awayName", default=""
+    )).strip()
+
+    # Some payloads expose a human-readable event name; use it only when the
+    # explicit participant fields are absent.
+    if not home_name or not away_name:
+        event_name = str(_first(
+            row, "short_name", "shortName", "name", default=""
+        )).strip()
+        for separator in (" at ", " vs ", " v "):
+            if separator in event_name:
+                left, right = [part.strip() for part in event_name.split(separator, 1)]
+                if not home_name:
+                    home_name = left
+                if not away_name:
+                    away_name = right
+                break
+
     date_raw = _first(row, "date", "kickoff", "startTime", "start_time", "utcDate")
     try:
-        date = datetime.fromisoformat(str(date_raw).replace("Z", "+00:00")) if date_raw else datetime.now(timezone.utc)
+        date = (
+            datetime.fromisoformat(str(date_raw).replace("Z", "+00:00"))
+            if date_raw else datetime.now(timezone.utc)
+        )
     except ValueError:
         date = datetime.now(timezone.utc)
     if date.tzinfo is None:
-        # The service's date field isn't guaranteed to carry a "Z"/offset
-        # suffix; a naive datetime here would raise "can't compare offset-naive
-        # and offset-aware datetimes" wherever it's later checked against the
-        # aware UTC start/end window this app uses everywhere else.
         date = date.replace(tzinfo=timezone.utc)
-    status = str(_first(row, "status", "state", default="scheduled"))
-    home_score = _first(row, "homeScore", "home_score", default=None)
-    away_score = _first(row, "awayScore", "away_score", default=None)
+
+    raw_status = _first(row, "status", "state", default="scheduled")
+    if isinstance(raw_status, dict):
+        status = str(_first(
+            raw_status, "state", "name", "description", "short_detail", default="scheduled"
+        ))
+    else:
+        status = str(raw_status or "scheduled")
+
+    def score_for(participant: Any, flat_keys: tuple[str, ...]) -> Any:
+        if isinstance(participant, dict):
+            value = _first(
+                participant, "score", "currentScore", "current_score", default=None
+            )
+            if isinstance(value, dict):
+                value = _first(value, "current", "value", "score", default=None)
+            if value not in (None, ""):
+                return value
+        return _first(row, *flat_keys, default=None)
+
+    home_score = score_for(home, ("homeScore", "home_score"))
+    away_score = score_for(away, ("awayScore", "away_score"))
+
+    def to_int(value: Any) -> int | None:
+        try:
+            if value in (None, ""):
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    league_name = str(_first(
+        row, "league_name", "leagueName", "competitionName", "note", default=""
+    )).strip()
+    if not league_name:
+        league_name = {
+            "eng.1": "Premier League",
+            "esp.1": "LaLiga",
+            "esp.2": "LaLiga 2",
+            "eng.2": "EFL Championship",
+        }.get(league_slug, league_slug)
+
+    season_value = _first(row, "season", default="")
+    if isinstance(season_value, dict):
+        season_value = _first(season_value, "year", "name", "slug", default="")
+
     return Fixture(
         fixture_id=f"livescorefootball-{league_slug}-{event_id}",
-        date=date, league=league_slug, season=str(_first(row, "season", default="")),
-        home_team=home_name or "Unknown", away_team=away_name or "Unknown",
+        date=date,
+        league=league_name,
+        season=str(season_value or ""),
+        home_team=home_name or "Unknown",
+        away_team=away_name or "Unknown",
         status=status,
-        home_score=int(home_score) if isinstance(home_score, (int, float, str)) and str(home_score).isdigit() else None,
-        away_score=int(away_score) if isinstance(away_score, (int, float, str)) and str(away_score).isdigit() else None,
-        stats={"source": "livescorefootball", "league_slug": league_slug},
+        home_score=to_int(home_score),
+        away_score=to_int(away_score),
+        stats={
+            "source": "livescorefootball",
+            "league_slug": league_slug,
+            "venue": (
+                (row.get("venue") or {}).get("name")
+                if isinstance(row.get("venue"), dict) else row.get("venue")
+            ),
+        },
     )
 
 
