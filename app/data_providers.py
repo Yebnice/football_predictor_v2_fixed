@@ -261,16 +261,44 @@ class TheSportsDBProvider(FootballProvider):
         # season schedule feed for all non-live windows so we get the complete
         # schedule and avoid silently producing under-filled slips.
         if not live:
-            season_label = str(season) if season else (f"{start.year}-{start.year + 1}" if start.month >= 7 else f"{start.year - 1}-{start.year}")
+            season_label = str(season) if season else (
+                f"{start.year}-{start.year + 1}"
+                if start.month >= 7
+                else f"{start.year - 1}-{start.year}"
+            )
             try:
-                rows += self._get("eventsseason.php", {"id": league_id, "s": season_label}).get("events") or []
+                season_rows = self._get(
+                    "eventsseason.php", {"id": league_id, "s": season_label}
+                ).get("events") or []
+                rows += season_rows
+
+                # The free V1 season feed can legitimately return an empty
+                # event list even when the rolling upcoming feed has fixtures.
+                # Do not mistake an empty successful response for "no matches";
+                # fall back to the documented rolling feeds so the dashboard
+                # remains useful.
+                if not season_rows:
+                    now = datetime.now(timezone.utc)
+                    if end >= now:
+                        rows += self._get(
+                            "eventsnextleague.php", {"id": league_id}
+                        ).get("events") or []
+                    if start <= now:
+                        rows += self._get(
+                            "eventspastleague.php", {"id": league_id}
+                        ).get("events") or []
             except httpx.HTTPError:
                 # Some league/season combinations may not expose the season feed.
-                # Fall back to the rolling endpoints rather than failing the whole provider.
-                if end >= datetime.now(timezone.utc):
-                    rows += self._get("eventsnextleague.php", {"id": league_id}).get("events") or []
-                if start <= datetime.now(timezone.utc):
-                    rows += self._get("eventspastleague.php", {"id": league_id}).get("events") or []
+                # Fall back to the rolling endpoints rather than failing the provider.
+                now = datetime.now(timezone.utc)
+                if end >= now:
+                    rows += self._get(
+                        "eventsnextleague.php", {"id": league_id}
+                    ).get("events") or []
+                if start <= now:
+                    rows += self._get(
+                        "eventspastleague.php", {"id": league_id}
+                    ).get("events") or []
         else:
             # Free V1 doesn't provide live scores; this branch is normally rejected above.
             rows += self._get("eventsnextleague.php", {"id": league_id}).get("events") or []
