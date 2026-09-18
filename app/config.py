@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # `auto` uses the configured provider chain and gracefully skips providers
     # whose credentials are absent. No synthetic data provider is included.
     football_provider: str = "auto"
-    football_provider_chain: str = "isportsapi,allsportsapi,football-data,api-football,thesportsdb,livescorefootball,sofascore"
+    football_provider_chain: str = "bigballsdata,isportsapi,football-data,api-football,allsportsapi,thesportsdb,livescorefootball,sofascore"
     football_provider_mode: str = "fallback"
     football_api_base_url: str = ""
     football_api_key: str = ""
@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     allsportsapi_api_key: str = ""
     allsportsapi_base_url: str = "https://apiv2.allsportsapi.com/football/"
     isports_api_key: str = ""
+    bigballsdata_api_key: str = ""
+    bigballsdata_base_url: str = "https://api.bigballsdata.com/v1"
     isports_base_url: str = "https://api.isportsapi.com"
     appwrite_endpoint: str = ""
     appwrite_project_id: str = ""
