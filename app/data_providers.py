@@ -612,14 +612,14 @@ class ApiFootballProvider(FootballProvider):
     def fixtures(self, start: datetime, end: datetime, live: bool = False,
                  league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
         if live:
-            selected = [str(league)] if league is not None else list(self.default_leagues)
+            selected = ([x.strip() for x in str(league).split(",") if x.strip()] if league is not None else list(self.default_leagues))
             params = {"live": "-".join(selected) if selected else "all"}
             payload = self._get("/fixtures", params, cacheable=False)
             rows = payload.get("response", [])
             out = [_normalize_api_football_fixture(row) for row in rows]
             return [fx for fx in out if start <= fx.date <= end]
 
-        selected = [str(league)] if league is not None else list(self.default_leagues)
+        selected = ([x.strip() for x in str(league).split(",") if x.strip()] if league is not None else list(self.default_leagues))
         if not selected:
             raise ValueError("API-Football fixture requests require API_FOOTBALL_LEAGUES to be configured")
 
