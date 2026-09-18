@@ -69,10 +69,7 @@ API_FOOTBALL_TO_FOOTBALL_DATA: dict[str, str] = {
     "61": "FL1",   # France Ligue 1
     "88": "DED",   # Netherlands Eredivisie
     "94": "PPL",   # Portugal Primeira Liga
-    "253": "MLS",  # USA MLS (catalogued, not assumed Free-tier)
-    "262": "LMX",  # Mexico Liga MX (catalogued, not assumed Free-tier)
     "71": "BSA",   # Brazil Serie A
-    "128": "ASL",  # Argentina Liga Profesional (catalogued, not assumed Free-tier)
 }
 
 
