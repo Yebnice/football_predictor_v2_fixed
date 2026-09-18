@@ -292,12 +292,18 @@ def _get_cached_provider():
 
 provider = _get_cached_provider()
 
+def _football_season_for(dt: datetime) -> int:
+    """Return the football season's starting year for API-Football requests."""
+    return dt.year if dt.month >= 7 else dt.year - 1
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _fetch_package_fixtures_cached(
     pool_start_iso: str,
     pool_end_iso: str,
     required_count: int,
     selected_league_ids: tuple[str, ...],
+    season: int,
     _provider,
 ):
     pool_start = datetime.fromisoformat(pool_start_iso)
@@ -308,11 +314,17 @@ def _fetch_package_fixtures_cached(
             pool_start,
             pool_end,
             league=",".join(selected_league_ids),
+            season=season,
             minimum=raw_target,
         )
     else:
         rows = (
-            _provider.fixtures(pool_start, pool_end, league=",".join(selected_league_ids))
+            _provider.fixtures(
+                pool_start,
+                pool_end,
+                league=",".join(selected_league_ids),
+                season=season,
+            )
             if selected_league_ids else []
         )
     return rows
@@ -327,6 +339,7 @@ def fetch_package_fixtures(start, end, required_count, selected_league_ids):
         pool_end.isoformat(),
         required_count,
         tuple(selected_league_ids),
+        _football_season_for(pool_start),
         provider,
     )
     return [fx for fx in rows if start <= fx.date <= end]
@@ -442,7 +455,17 @@ else:
 # Fetch fixtures
 try:
     initial_required = {"Daily": 10, "Weekly": 40, "Monthly": 70}.get(pkg, 0)
-    fixtures = fetch_package_fixtures(start, end, initial_required, selected_league_ids) if initial_required else provider.fixtures(start, end, live=(pkg == "Live"), league=",".join(selected_league_ids) if selected_league_ids else None)
+    fixtures = (
+        fetch_package_fixtures(start, end, initial_required, selected_league_ids)
+        if initial_required
+        else provider.fixtures(
+            start,
+            end,
+            live=(pkg == "Live"),
+            league=",".join(selected_league_ids) if selected_league_ids else None,
+            season=_football_season_for(start),
+        )
+    )
 except Exception as e:
     st.error(f"Failed to fetch fixtures: {str(e)}")
     fixtures = []
