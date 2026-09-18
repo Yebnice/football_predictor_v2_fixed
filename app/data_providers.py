@@ -194,6 +194,256 @@ class ISportsAPIProvider(FootballProvider):
             rows = list(rows.values())
         return self._normalise(rows[0]) if rows and isinstance(rows[0], dict) else None
 
+class BigBallsDataProvider(FootballProvider):
+    """Adapter for Big Balls Sports Data's football REST API.
+
+    The official SDK is Node/TypeScript, but the Streamlit application is
+    Python, so this adapter uses the same documented REST gateway directly.
+    """
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.bigballsdata.com/v1",
+        timeout: float = 25.0,
+        cache_ttl_seconds: float = 30.0,
+    ):
+        if not api_key:
+            raise ValueError("BIGBALLSDATA_API_KEY is required when Big Balls is enabled")
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.client = httpx.Client(
+            timeout=timeout,
+            headers={"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"},
+        )
+        self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
+
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        query = dict(params or {})
+        cache_key = f"{path}?{sorted(query.items())}"
+        if self._cache is not None:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+        response = self.client.get(f"{self.base_url}/{path.lstrip('/')}", params=query)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Big Balls Sports Data returned an unexpected JSON payload")
+        error = payload.get("error")
+        if error:
+            raise RuntimeError(f"Big Balls Sports Data request failed: {error}")
+        if self._cache is not None:
+            self._cache.set(cache_key, payload)
+        return payload
+
+    @staticmethod
+    def _parse_dt(value: Any) -> datetime:
+        raw = str(value or "").strip()
+        if not raw:
+            return datetime.now(timezone.utc)
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.now(timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    def _normalise(row: dict[str, Any]) -> Fixture:
+        status_raw = str(row.get("status") or "scheduled").strip().lower()
+        status = {
+            "scheduled": "scheduled",
+            "upcoming": "scheduled",
+            "live": "in_play",
+            "in_progress": "in_play",
+            "in-play": "in_play",
+            "finished": "finished",
+            "final": "finished",
+            "postponed": "postponed",
+            "suspended": "suspended",
+            "cancelled": "cancelled",
+        }.get(status_raw, status_raw)
+        score = row.get("score") or {}
+        home = row.get("home") or {}
+        away = row.get("away") or {}
+
+        return Fixture(
+            fixture_id=f"bigballs-{row.get('id')}",
+            date=BigBallsDataProvider._parse_dt(row.get("kickoff_utc")),
+            league=str((row.get("league") or {}).get("name") if isinstance(row.get("league"), dict) else row.get("league") or "Unknown"),
+            season=str(row.get("season") or "Unknown"),
+            home_team=str(home.get("name") or "Unknown").strip(),
+            away_team=str(away.get("name") or "Unknown").strip(),
+            status=status,
+            home_score=score.get("home") if isinstance(score, dict) else None,
+            away_score=score.get("away") if isinstance(score, dict) else None,
+            stats={
+                "source": "bigballsdata",
+                "home_team_id": home.get("id"),
+                "away_team_id": away.get("id"),
+                "has_odds": row.get("has_odds"),
+                "attendance": row.get("attendance"),
+                "broadcast": row.get("broadcast"),
+                "linescore": row.get("linescore"),
+            },
+        )
+
+    def fixtures(
+        self,
+        start: datetime,
+        end: datetime,
+        live: bool = False,
+        league: int | str | None = None,
+        season: int | str | None = None,
+    ) -> list[Fixture]:
+        params: dict[str, Any] = {"sport": "football", "limit": 200}
+        if live:
+            params["status"] = "live"
+
+        # The dashboard uses API-Football numeric league IDs. Translate the
+        # common top-five leagues to Big Balls canonical keys for efficient
+        # league-scoped requests.
+        league_map = {
+            "39": "epl", "140": "laliga", "78": "bundesliga",
+            "135": "serie-a", "61": "ligue-1", "253": "mls",
+            "94": "primeira-liga",
+        }
+        tokens = []
+        if league is not None:
+            tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
+        if tokens:
+            mapped = [league_map[t] for t in tokens if t in league_map]
+            if mapped and not live:
+                rows: list[dict[str, Any]] = []
+                for slug in dict.fromkeys(mapped):
+                    payload = self._get("matches", {**params, "league": slug})
+                    data = payload.get("data") or []
+                    rows.extend(data if isinstance(data, list) else [])
+            else:
+                payload = self._get("matches", params)
+                rows = payload.get("data") or []
+                if isinstance(rows, dict):
+                    rows = list(rows.values())
+        else:
+            payload = self._get("matches", params)
+            rows = payload.get("data") or []
+            if isinstance(rows, dict):
+                rows = list(rows.values())
+
+        fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
+        return [fx for fx in fixtures if start <= fx.date <= end]
+
+    def fixture_by_id(self, fixture_id: str) -> Fixture | None:
+        event_id = fixture_id.removeprefix("bigballs-")
+        payload = self._get(f"matches/{event_id}")
+        data = payload.get("data")
+        return self._normalise(data) if isinstance(data, dict) else None
+
+    def odds(self, fixture_id: str) -> dict[str, Any]:
+        event_id = fixture_id.removeprefix("bigballs-")
+        payload = self._get(f"matches/{event_id}/odds", {"sport": "football"})
+        return payload.get("data") or {}
+
+    def head_to_head(self, home_team_id: int | str, away_team_id: int | str, limit: int = 5) -> list[dict[str, Any]]:
+        # H2H is exposed by the provider family, but its exact request shape can
+        # vary by competition; leave this as a safe empty fallback for now.
+        return []
+
+
+class ISportsAPIProvider(FootballProvider):
+    """Adapter for iSports API Football V2 REST endpoints."""
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.isportsapi.com",
+        timeout: float = 25.0,
+        cache_ttl_seconds: float = 30.0,
+    ):
+        if not api_key:
+            raise ValueError("ISPORTSAPI_API_KEY is required when iSportsAPI is enabled")
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.client = httpx.Client(timeout=timeout, headers={"Accept": "application/json"})
+        self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
+
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        query = {"api_key": self.api_key, **(params or {})}
+        cache_key = f"{path}?{sorted(query.items())}"
+        if self._cache is not None:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+        response = self.client.get(f"{self.base_url}/{path.lstrip('/')}", params=query)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("iSports API returned an unexpected JSON payload")
+        if payload.get("code") not in (None, 0, "0"):
+            raise RuntimeError(f"iSports API request failed: {payload.get('message') or payload}")
+        if self._cache is not None:
+            self._cache.set(cache_key, payload)
+        return payload
+
+    @staticmethod
+    def _status(status: Any) -> str:
+        try:
+            value = int(status)
+        except (TypeError, ValueError):
+            value = 0
+        return {
+            0: "scheduled", 1: "in_play", 2: "paused", 3: "in_play",
+            4: "extra_time", 5: "in_play", -1: "finished",
+            -10: "cancelled", -11: "scheduled", -12: "terminated",
+            -13: "interrupted", -14: "postponed",
+        }.get(value, str(value))
+
+    @staticmethod
+    def _normalise(row: dict[str, Any]) -> Fixture:
+        dt = datetime.fromtimestamp(int(row.get("matchTime") or 0), tz=timezone.utc)
+        return Fixture(
+            fixture_id=f"isports-{row.get('matchId')}",
+            date=dt,
+            league=str(row.get("leagueName") or "Unknown"),
+            season=str(row.get("season") or "Unknown"),
+            home_team=str(row.get("homeName") or "Unknown").strip(),
+            away_team=str(row.get("awayName") or "Unknown").strip(),
+            status=ISportsAPIProvider._status(row.get("status")),
+            home_score=row.get("homeScore"),
+            away_score=row.get("awayScore"),
+            stats={
+                "source": "isportsapi",
+                "home_team_id": row.get("homeId"),
+                "away_team_id": row.get("awayId"),
+                "league_id": row.get("leagueId"),
+                "neutral": row.get("neutral"),
+                "explain": row.get("explain"),
+            },
+        )
+
+    def fixtures(self, start: datetime, end: datetime, live: bool = False,
+                 league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
+        if live:
+            payload = self._get("/sport/football/livescores")
+            rows = payload.get("data") or []
+        else:
+            # iSports schedule/basic accepts one date, leagueId, or matchId.
+            # For a range, call each calendar date and merge the results.
+            days = max(1, (end.date() - start.date()).days + 1)
+            rows = []
+            for offset in range(min(days, 7)):
+                day = start.date() + timedelta(days=offset)
+                params: dict[str, Any] = {"date": day.isoformat()}
+                if league is not None and str(league).strip().isdigit():
+                    params["leagueId"] = str(league)
+                    params.pop("date", None)
+                if season is not None and params.get("leagueId"):
+                    params["season"] = season
+                payload = self._get("/sport/football/schedule/basic", params)
+                data = payload.get("data") or []
+                rows.extend(data if isinstance(data, list) else [])
+        fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
+        return [fx for fx in fixtures if start <= fx.date <= end]
+
+
 class AllSportsAPIProvider(FootballProvider):
     """Adapter for AllSportsAPI Football API V2.
 
