@@ -39,6 +39,9 @@ class FootballProvider(ABC):
     def odds(self, fixture_id: str) -> dict[str, Any]:
         return {}
 
+    def head_to_head(self, home_team_id: int | str, away_team_id: int | str, limit: int = 5) -> list[dict[str, Any]]:
+        return []
+
 class _TTLCache:
     """Minimal in-process TTL cache so repeated calls during a testing session
     (dashboard refreshes, retries) don't burn through a provider's daily quota.
@@ -859,6 +862,15 @@ class ApiFootballProvider(FootballProvider):
         response = self._get("/odds", {"fixture": _api_football_event_id(fixture_id)}).get("response", [])
         return response[0] if response else {}
 
+    def head_to_head(self, home_team_id: int | str, away_team_id: int | str, limit: int = 5) -> list[dict[str, Any]]:
+        if not home_team_id or not away_team_id:
+            return []
+        payload = self._get(
+            "/fixtures/headtohead",
+            {"h2h": f"{home_team_id}-{away_team_id}", "last": max(1, min(int(limit), 20))},
+        )
+        return payload.get("response", []) or []
+
 
 def _stat_value(entry: dict[str, Any] | None, stat_type: str) -> float:
     """Pull a named value (e.g. 'Corner Kicks', 'Yellow Cards') out of one
@@ -912,6 +924,8 @@ def _normalize_api_football_fixture(row: dict[str, Any]) -> Fixture:
             "venue": ((fx.get("venue") or {}).get("name")),
             "timezone": fx.get("timezone"),
             "periods": score.get("periods", {}),
+            "referee": fx.get("referee"),
+            "venue_city": ((fx.get("venue") or {}).get("city")) if isinstance(fx.get("venue"), dict) else None,
         },
     )
 
