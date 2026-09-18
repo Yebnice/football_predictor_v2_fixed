@@ -36,6 +36,7 @@ class LivescoreFootballProviderTests(unittest.TestCase):
                     {
                         "homeAway": "home",
                         "score": None,
+                        "form": "WDLWW",
                         "team": {
                             "source_id": "1",
                             "displayName": "Newcastle United",
@@ -45,6 +46,7 @@ class LivescoreFootballProviderTests(unittest.TestCase):
                     {
                         "homeAway": "away",
                         "score": None,
+                        "form": "LLWDL",
                         "team": {
                             "source_id": "2",
                             "displayName": "Hull City",
@@ -62,6 +64,10 @@ class LivescoreFootballProviderTests(unittest.TestCase):
         self.assertEqual(fx.league, "Premier League")
         self.assertEqual(fx.season, "2026")
         self.assertEqual(fx.status, "pre")
+        self.assertEqual((fx.home_form.wins, fx.home_form.draws, fx.home_form.losses), (3, 1, 1))
+        self.assertEqual((fx.away_form.wins, fx.away_form.draws, fx.away_form.losses), (1, 1, 3))
+        self.assertEqual(fx.home_form.matches, 5)
+        self.assertEqual(fx.away_form.matches, 5)
         self.assertIsNone(fx.home_score)
         self.assertIsNone(fx.away_score)
 
