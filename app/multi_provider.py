@@ -72,6 +72,14 @@ API_FOOTBALL_TO_FOOTBALL_DATA: dict[str, str] = {
     "71": "BSA",   # Brazil Serie A
 }
 
+API_FOOTBALL_TO_BIGBALLS: dict[str, str] = {
+    "39": "epl",
+    "140": "laliga",
+    "78": "bundesliga",
+    "135": "serie-a",
+    "61": "ligue-1",
+}
+
 
 
 class CompositeFootballProvider(FootballProvider):
@@ -146,7 +154,16 @@ class CompositeFootballProvider(FootballProvider):
                     rows = provider.fixtures(
                         start, end, live=live, league=provider_league, season=provider_season
                     )
-                elif name in {"football-data", "football-data-org", "football-data.org"} and api_league_selection:
+                elif name in {"bigballsdata", "big-balls-data", "bigballs"} and api_league_selection:
+                    tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
+                    mapped = [API_FOOTBALL_TO_BIGBALLS[token] for token in tokens if token in API_FOOTBALL_TO_BIGBALLS]
+                    rows = []
+                    if mapped:
+                        for slug in dict.fromkeys(mapped):
+                            rows.extend(provider.fixtures(start, end, live=live, league=slug, season=season))
+                    else:
+                        rows = provider.fixtures(start, end, live=live, league=None, season=season)
+                                elif name in {"football-data", "football-data-org", "football-data.org"} and api_league_selection:
                     tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
                     translated = [API_FOOTBALL_TO_FOOTBALL_DATA[token] for token in tokens if token in API_FOOTBALL_TO_FOOTBALL_DATA]
                     if translated:
