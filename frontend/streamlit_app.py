@@ -18,6 +18,7 @@ import plotly.express as px
 import pandas as pd
 
 from app.config import settings
+from app.leagues import MAJOR_LEAGUES
 from app.data_providers import build_provider_from_settings
 from app.engine import FootballProbabilityEngine
 from app.corners_cards import CornersCardsEngine
@@ -223,15 +224,16 @@ def _get_cached_provider():
 provider = _get_cached_provider()
 
 def fetch_package_fixtures(start, end, required_count):
-    # Composite provider can continue down the real-data chain when the first
-    # source (for example, TheSportsDB free V1 with its 15-event season cap)
-    # cannot supply enough matches for a package. Single providers keep their
-    # normal behavior.
+    # Normalize package requests to one UTC-day cache window so Daily, Weekly,
+    # and Monthly reuse the same multi-league fixture fetch.
+    pool_start = start.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    pool_end = pool_start + timedelta(days=31, hours=23, minutes=59, seconds=59)
     if hasattr(provider, "providers"):
         raw_target = {5: 10, 20: 40, 35: 70}.get(required_count, required_count)
-        return provider.fixtures(start, end, minimum=raw_target)
-    return provider.fixtures(start, end)
-
+        rows = provider.fixtures(pool_start, pool_end, minimum=raw_target)
+    else:
+        rows = provider.fixtures(pool_start, pool_end)
+    return [fx for fx in rows if start <= fx.date <= end]
 engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_coles_rho)
 corners_cards_engine = CornersCardsEngine()
 slips = SlipGenerator(engine, settings.min_selection_confidence, settings.rng_salt)
