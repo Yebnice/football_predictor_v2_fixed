@@ -632,7 +632,19 @@ class ApiFootballProvider(FootballProvider):
             params = {"from": start.date().isoformat(), "to": end.date().isoformat(), "league": league_id}
             if season is not None:
                 params["season"] = season
-            payload = self._get("/fixtures", params, cacheable=True)
+            try:
+                payload = self._get("/fixtures", params, cacheable=True)
+            except RuntimeError as exc:
+                # Preserve fixtures already collected when a free-plan quota or
+                # upstream limit is reached mid-batch. A large league selection
+                # should degrade to partial real data, not discard everything.
+                if "rate limit" in str(exc).lower() or "429" in str(exc):
+                    logger.warning(
+                        "API-Football batch stopped at league %s after quota/rate limit: %s",
+                        league_id, exc,
+                    )
+                    break
+                raise
             rows = payload.get("response", [])
             fixtures = [_normalize_api_football_fixture(row) for row in rows]
 
