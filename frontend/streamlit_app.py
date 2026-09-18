@@ -425,7 +425,7 @@ with st.sidebar:
     <div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.5rem 0.85rem;">
         {_status_row("Data provider", f"{settings.football_provider} · {provider_status}", provider_ok)}
         {_status_row("AllSportsAPI", "Configured" if bool(allsportsapi_key) else "Key missing", bool(allsportsapi_key))}
-        {_status_row("football-data.org", "Configured" if bool(football_data_api_key) else "Key missing", bool(football_data_api_key))}
+        {_status_row("football-data.org", "Configured" if bool(football_data_key) else "Key missing", bool(football_data_key))}
         {_status_row("API-Football", data_status, data_ok)}
         {_status_row("API-Football season", str(_football_season_for(datetime.now(timezone.utc))), True)}
         {_status_row("Groq AI", groq_status, groq_ok)}
