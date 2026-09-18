@@ -118,7 +118,10 @@ class CompositeFootballProvider(FootballProvider):
             api_league_selection = True
 
         for name, provider in self.providers:
-            if api_league_selection and name not in {"api-football", "api-sports", "apisports"}:
+            if api_league_selection and name not in {
+                "api-football", "api-sports", "apisports",
+                "thesportsdb", "the-sports-db", "thesportsdb-v1",
+            }:
                 continue
             try:
                 if name in {"api-football", "api-sports", "apisports"}:
