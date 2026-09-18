@@ -44,6 +44,32 @@ class LivescoreFootballProviderTests(unittest.TestCase):
         self.assertIsNone(fx.home_score)
 
     @patch("httpx.Client.get")
+    def test_fixtures_follows_documented_page_count(self, mock_get):
+        first = ASSUMED_FIXTURE_ROW | {"id": "5001"}
+        second = ASSUMED_FIXTURE_ROW | {"id": "5002"}
+        class R:
+            def __init__(self, payload):
+                self.status_code = 200
+                self.headers = {}
+                self._payload = payload
+            def raise_for_status(self): pass
+            def json(self): return self._payload
+        mock_get.side_effect = [
+            R({"events": [first], "pageIndex": 1, "pageCount": 2}),
+            R({"events": [second], "pageIndex": 2, "pageCount": 2}),
+        ]
+        provider = self._provider()
+        start = datetime(2026, 9, 20, tzinfo=timezone.utc)
+        end = datetime(2026, 9, 21, tzinfo=timezone.utc)
+        fixtures = provider.fixtures(start, end)
+        self.assertEqual([fx.fixture_id for fx in fixtures], [
+            "livescorefootball-eng.1-5001",
+            "livescorefootball-eng.1-5002",
+        ])
+        self.assertEqual(mock_get.call_count, 2)
+        self.assertEqual(mock_get.call_args_list[1].kwargs["params"]["page"], 2)
+
+    @patch("httpx.Client.get")
     def test_extract_rows_checks_multiple_wrapper_keys(self, mock_get):
         # Response shape is unconfirmed, so the provider tries several
         # plausible envelope keys rather than assuming exactly one.
