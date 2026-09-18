@@ -480,6 +480,17 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
+    if not settings.groq_api_key:
+        st.info("AI analysis is not connected. Add GROQ_API_KEY in Streamlit Cloud → Manage app → Settings → Secrets, then reboot.")
+    else:
+        if st.button("✅ Test AI connection", key="test_groq_connection"):
+            try:
+                test_explainer = GroqExplainer(settings.groq_api_key, settings.groq_model)
+                result = test_explainer.explain({"home_team": "Test FC", "away_team": "Test United"}, [{"market": "Total Goals", "selection": "Over 2.5", "probability": 0.50}])
+                st.success("AI connection is working.")
+                st.caption(result[:300])
+            except Exception as exc:
+                st.error(f"AI connection failed: {exc}")
     fixture_options = [f"{fx.home_team} vs {fx.away_team} ({fx.fixture_id})" for fx in fixtures]
     selected_match = st.selectbox("Select match to analyze", fixture_options, key="match_explanation")
 
