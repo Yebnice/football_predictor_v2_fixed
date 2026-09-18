@@ -993,6 +993,12 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
     Streamlit frontend from silently drifting apart when new provider settings
     are added.
     """
+    # Backward-compatible reads for Streamlit/FastAPI deployments that may
+    # briefly have a mixed module cache during a rolling/restart deployment.
+    # Keep the safe free-plan defaults even when the newly added fields are absent.
+    api_football_leagues = getattr(settings, "api_football_leagues", "39,140,78,135") or "39,140,78,135"
+    api_football_use_standings_form = bool(getattr(settings, "api_football_use_standings_form", True))
+
     return build_provider(
         settings.football_provider,
         settings.football_api_base_url,
@@ -1001,10 +1007,10 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         sofascore_browser_path=settings.sofascore_browser_path or None,
         livescorefootball_league=(getattr(settings, "livescorefootball_leagues", "") or settings.livescorefootball_league or None),
         odds_preferred_bookmaker=settings.odds_preferred_bookmaker,
-        api_football_enrich_lists=settings.api_football_enrich_lists,
-        api_football_fetch_discipline=settings.api_football_fetch_discipline,
-        api_football_leagues=settings.api_football_leagues,
-        api_football_use_standings_form=settings.api_football_use_standings_form,
+        api_football_enrich_lists=getattr(settings, "api_football_enrich_lists", False),
+        api_football_fetch_discipline=getattr(settings, "api_football_fetch_discipline", False),
+        api_football_leagues=api_football_leagues,
+        api_football_use_standings_form=api_football_use_standings_form,
         football_data_api_key=settings.football_data_api_key,
         football_data_base_url=settings.football_data_base_url,
         football_data_competition=settings.football_data_competition,
