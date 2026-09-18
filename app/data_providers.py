@@ -1191,7 +1191,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         thesportsdb_api_key=settings.thesportsdb_api_key,
         thesportsdb_base_url=settings.thesportsdb_base_url,
         thesportsdb_league_id=settings.thesportsdb_league_id,
-        allsportsapi_api_key=getattr(settings, "allsportsapi_key", ""),
+        allsportsapi_api_key=getattr(settings, "allsportsapi_api_key", ""),
         allsportsapi_base_url=getattr(settings, "allsportsapi_base_url", "https://apiv2.allsportsapi.com/football/"),
         provider_chain=settings.football_provider_chain,
         provider_mode=settings.football_provider_mode,
@@ -1213,6 +1213,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     thesportsdb_api_key: str = "123",
                     thesportsdb_base_url: str = "",
                     thesportsdb_league_id: str = "4328",
+                    allsportsapi_api_key: str = "",
+                    allsportsapi_base_url: str = "https://apiv2.allsportsapi.com/football/",
                     provider_chain: str = "",
                     provider_mode: str = "fallback") -> FootballProvider:
     """Build either one provider or a configurable provider chain.
@@ -1224,7 +1226,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
     normalized = (name or "auto").lower().strip()
     chain_spec = provider_chain.strip() if provider_chain else (name if "," in name else "")
     if normalized in {"auto", "multi", "composite", "fallback"}:
-        chain_spec = provider_chain.strip() or "thesportsdb,api-football,football-data,livescorefootball,sofascore"
+        chain_spec = provider_chain.strip() or "allsportsapi,football-data,api-football,thesportsdb,livescorefootball,sofascore"
     if chain_spec:
         from .multi_provider import CompositeFootballProvider
         providers: list[tuple[str, FootballProvider]] = []
