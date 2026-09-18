@@ -10,6 +10,56 @@ from .data_providers import FootballProvider, _extract_1x2_odds
 logger = logging.getLogger(__name__)
 
 
+# API-Football -> TheSportsDB league IDs. This lets the app keep one public
+# league selector while falling back to the free TheSportsDB feed when an
+# API-Football free key cannot access the current season.
+API_FOOTBALL_TO_THESPORTSDB: dict[str, str] = {
+    "39": "4328",   # England Premier League
+    "140": "4335",  # Spain La Liga
+    "78": "4331",   # Germany Bundesliga
+    "135": "4332",  # Italy Serie A
+    "61": "4334",   # France Ligue 1
+    "88": "4337",   # Netherlands Eredivisie
+    "94": "4344",   # Portugal Primeira Liga
+    "179": "4330",  # Scotland Premiership
+    "144": "4338",  # Belgium Jupiler League
+    "203": "4339",  # Turkey Super Lig
+    "197": "4336",  # Greece Super League
+    "218": "4621",  # Austria Bundesliga
+    "207": "4675",  # Switzerland Super League
+    "119": "4340",  # Denmark Superliga
+    "103": "4358",  # Norway Eliteserien
+    "113": "4347",  # Sweden Allsvenskan
+    "106": "4422",  # Poland Ekstraklasa
+    "345": "4631",  # Czech First League
+    "210": "4629",  # Croatia HNL
+    "286": "4671",  # Serbia Super Liga
+    "283": "4691",  # Romania Liga I
+    "333": "4354",  # Ukraine Premier League
+    "235": "4355",  # Russia Premier League
+    "233": "4829",  # Egypt Premier League
+    "200": "4520",  # Morocco Botola
+    "186": "4753",  # Algeria Ligue 1
+    "202": "4828",  # Tunisia Ligue 1
+    "288": "4802",  # South Africa Premier Soccer League
+    "399": "4827",  # Nigeria NPFL
+    "307": "4668",  # Saudi Pro League
+    "301": "4678",  # UAE Pro League
+    "305": "4663",  # Qatar Stars League
+    "98": "4633",   # Japan J1 League
+    "292": "4689",  # South Korea K League 1
+    "253": "4346",  # USA MLS
+    "71": "4351",   # Brazil Brasileirao
+    "128": "4406",  # Argentina Primera Division
+    "262": "4350",  # Mexico Primera League
+    "239": "4497",  # Colombia Primera A
+    "265": "4627",  # Chile Primera Division
+    "242": "4686",  # Ecuador Serie A
+    "268": "4432",  # Uruguay Primera Division
+    "188": "4356",  # Australia A-League
+}
+
+
 class CompositeFootballProvider(FootballProvider):
     """Provider router with graceful fallback across multiple providers.
 
@@ -71,8 +121,40 @@ class CompositeFootballProvider(FootballProvider):
             if api_league_selection and name not in {"api-football", "api-sports", "apisports"}:
                 continue
             try:
-                provider_league = league if name in {"api-football", "api-sports", "apisports"} else None
-                rows = provider.fixtures(start, end, live=live, league=provider_league, season=season)
+                if name in {"api-football", "api-sports", "apisports"}:
+                    provider_league = league
+                    provider_season = season
+                    rows = provider.fixtures(
+                        start, end, live=live, league=provider_league, season=provider_season
+                    )
+                elif name in {"thesportsdb", "the-sports-db", "thesportsdb-v1"} and api_league_selection:
+                    # Translate the app's API-Football numeric league selection
+                    # into TheSportsDB's league namespace and query each selected
+                    # competition separately.
+                    tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
+                    translated = []
+                    for token in tokens:
+                        db_league = API_FOOTBALL_TO_THESPORTSDB.get(token)
+                        if db_league:
+                            translated.append(db_league)
+                    rows = []
+                    provider_season = season
+                    if provider_season is not None:
+                        try:
+                            provider_season = f"{int(provider_season)}-{int(provider_season) + 1}"
+                        except (TypeError, ValueError):
+                            pass
+                    for db_league in translated:
+                        rows.extend(
+                            provider.fixtures(
+                                start, end, live=live, league=db_league, season=provider_season
+                            )
+                        )
+                else:
+                    provider_league = None
+                    rows = provider.fixtures(
+                        start, end, live=live, league=provider_league, season=season
+                    )
                 # Do not treat structurally empty fixtures as useful data. A
                 # provider can return rows with missing participants when its
                 # upstream schema changes; those rows must not block a later
