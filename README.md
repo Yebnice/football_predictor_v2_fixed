@@ -1,233 +1,475 @@
-# Global AI Football Predictor v2
+# PjDigitalServices
 
-A modular football prediction platform built around a score-distribution engine, multi-market probabilities, controlled randomized slips, live fixtures, VIP access hooks, and optional Groq explanations.
+A pay-per-order storefront for airtime, data bundles, ECG and water bills,
+and AFA registration. Customers pay you directly through Paystack for each
+order — there's no wallet to pre-fund. Runs as a normal website and installs
+like an app on phones (Add to Home Screen).
 
-## What is included
+## Pages
 
-- Real provider adapter interface with configurable external providers.
-- Historical/live fixture normalization.
-- ELO + recent-form + home/away strength feature layer (falls back to xG when the provider supplies it).
-- Poisson score-distribution engine.
-- Multi-market probability engine:
-  - 1X2, double chance, draw-no-bet
-  - over/under 0.5 through 5.5 (match total) and 0.5 through 3.5 (each team)
-  - BTTS yes/no
-  - exact correct score (top 10 by probability)
-  - winning margin (1, 2, 3+ either side)
-- Corners & cards estimator (`app/corners_cards.py`), a separate module from the goals engine — see its own section below.
-- Fair odds from model probabilities.
-- Optional comparison against bookmaker odds when supplied by the provider (currently 1X2 only).
-- Value/edge calculation, now exposed via `/match/{id}/value-bets`.
-- Daily, weekly and monthly slip generators using controlled randomization after quality filtering.
-- Daily: one slip with 5-10 eligible matches.
-- Weekly: 5 different randomized slips, 20 matches each.
-- Monthly: 5 different randomized slips, 30-50 matches each; at least 35 eligible matches are required so distinct 30+ selections are mathematically possible.
-- FastAPI backend.
-- Streamlit dashboard, including a public Free/VVIP tips feed and an admin board — see its own section below.
-- Groq integration for natural-language match explanations, wired up at `/match/{id}/explain`; Groq is an explanation/assistant layer, not a replacement for the statistical model.
-- Optional Appwrite mirror sync for profiles/tips when APPWRITE_* settings and the optional SDK are configured; the primary source of truth remains this app's database. The admin/VVIP board uses its own server-side accounts/roles system, not Appwrite Auth.
-- USDT, MTN MoMo and Telecel payment service interfaces; provider verification remains server-side and must be configured with the applicable merchant/API credentials.
+- `/` — marketing landing page
+- `/mtn-data`, `/at-data`, `/telecel-data` — the real tiered product structure (see below): MTN Master/Express, AT iShare/BigTime, Telecel Group Share, each with Single/Bulk/Excel
+- `/data` — a simpler, faster alternative: live commission bundles, single purchase only, any network, no tiers to think about
+- `/airtime` — instant top-up, all three networks
+- `/bills` — ECG electricity (meter lookup, then prepaid top-up) and Ghana Water (account lookup returns a fixed bill amount)
+- `/afa` — AFA farmer registration, with the real fields Techlink requires and the live registration fee
+- `/tv` — DSTV, GOtv, StarTimes — smartcard validated before payment, fixed amount due
+- `/checker` — BECE/WASSCE result checker: buy a voucher, or have Techlink look up the result for you (not instant)
+- `/faq` — searchable FAQ, adapted from Techlink's real FAQ content (draft — please review the wording)
+- `/dashboard` — customer order tracking
+- `/track` — same lookup as the dashboard, for a customer who doesn't want to save their details
+- `/register` — customers save name/email/phone for faster checkout next time
+- `/feedback` — complaints and general feedback, land in the admin inbox
+- `/admin` — sales totals, all orders, and the feedback inbox, password-protected
 
-**Not implemented yet, despite being mentioned in earlier drafts of this README:** half-time/full-time matrix markets, Asian handicap/totals calculators, and an ML blend on top of the Poisson model. Corners/cards markets *are* now implemented (see below) — this line used to list them as missing; that's been corrected. If you need the remaining ones, they'd extend `FootballProbabilityEngine.markets()` and, for handicap, the provider's fixture normalization — they are not hidden hooks already wired in.
+A chat bubble in the corner (`components/ChatWidget.js`) answers common
+questions with canned responses — a simple keyword matcher, not a paid AI
+service.
 
-## Important
+**No wallet balance anywhere, Paystack everywhere** — confirmed across the
+whole app, including the new tiered pages: there's no "Wallet Balance"
+display like the real Techlink site shows (that's their internal agent
+wallet; this storefront never had one after the earlier redesign), and
+every purchase — single, bulk, or Excel — goes through the same Paystack
+popup as the rest of the site, never a "Wallet / Mobile Money" choice.
 
-This package is a strong application foundation, not a guarantee of betting outcomes. Production accuracy requires a real historical dataset, out-of-sample validation, calibration, live-data verification and ongoing monitoring.
+## MTN / AT / Telecel Data — the real tiered structure
 
-Payment connectors are intentionally isolated. Do not activate VIP from a user-submitted screenshot or unverified transaction hash. Server-side verification is required before a subscription becomes active.
+Your screenshots showed the real product structure, and it's genuinely
+different from a simple bundle list:
 
-## Corners & cards markets
+- **MTN Data**: MTN Master, MTN Express, MTN EVD/Airtime
+- **AT Data**: AT iShare, AT BigTime, AT EVD/Airtime
+- **Telecel Data**: Telecel Group Share, Telecel EVD/Airtime
 
-`app/corners_cards.py` is a separate module from the goals engine, with its own tests (`tests/test_corners_cards.py`). It estimates:
+Each of those has three ways to order, all built and working:
+**Single** (one recipient), **Bulk** (paste a list, one `phone size` pair
+per line, matching the exact format shown on the real site), and **Excel**
+(upload a `.csv`/`.xlsx` file — parsed client-side, same underlying order
+as Bulk).
 
-- Total Corners: over/under 8.5, 9.5, 10.5, 11.5
-- Total Cards: over/under 2.5, 3.5, 4.5
-- Team Corners (each side): over/under 3.5, 4.5, 5.5
+**On Excel specifically** — a deliberate simplification worth knowing
+about: rather than forwarding the raw file to Techlink's own
+`/orders/excel` endpoint, this app parses the file in the browser and
+submits it through the same JSON bulk endpoint (`/orders/bulk`) as the
+Bulk tab. Same outcome for the customer (upload a file, place a bulk
+order), but far simpler and more secure to build — no server-side file
+storage, no multipart forwarding, and it stays inside the same
+verify-then-fulfil security pattern as everything else. If you specifically
+need the file itself preserved or forwarded to Techlink's own Excel
+endpoint (e.g. for their own template-column mapping), that's a distinct,
+addable change.
 
-Model: corners and cards are each treated as independent Poisson counts for the home and away side, scaled from a `TeamDiscipline` average (corners/cards for and against per team) and a per-fixture league average, with a small home/away adjustment. No new data source is required. Real providers that do not populate `TeamDiscipline` fall back to fixture-level league averages, i.e. a neutral estimate for both sides until per-team corner/card history is added the same way `_recent_form()` already is for goals.
+**Pricing for this catalogue** works slightly differently from the
+"Quick data top-up" page: `lib/agentProducts.js` holds a reference copy of
+the real prices you provided (for the tier picker to feel instant), but the
+amount actually charged is always re-confirmed live against
+`GET /products?category=...` at the moment of purchase — so a stale local
+number can never overcharge or undercharge a customer, it would just show
+briefly wrong before checkout and get corrected at payment.
 
-Every corners/cards `MarketPrediction` carries `metadata={"estimated": True, "basis": "...not live match stats"}` — check that flag in your own UI, since this is a model estimate, not scraped in-match data. The default league averages (9.6 total corners, 3.8 total cards) are documented with their sourcing/caveats directly in `app/schemas.py`'s `Fixture` docstring — the corners figure is anchored to FootyStats' cited Premier League/Champions League 2025-26 averages; the cards figure is a commonly-cited range, not a single sourced statistic, and is flagged as such in code.
+**MTN Master's real delivery time** — this is the "note under the master
+data plan" you asked me to check. Your screenshot showed a live queue with
+a **20.2 hour** wait on one order and a typical wait of **6.4 hours**
+across 128 deliveries — meaningfully slower than the FAQ's general
+"30 minutes to a few hours" framing. I've put this directly on the MTN
+Master tab as a visible warning (`sellingNotes` in `lib/agentProducts.js`),
+along with the other real selling rules from your screenshots: verify the
+number first (wrong numbers aren't refunded), check the line has no
+outstanding balance, and Turbonet/Broadband SIMs aren't eligible for
+Master. The same treatment applies to AT iShare/BigTime (AirtelTigo-only
+number prefixes, checked live on the form) and general "no duplicate
+orders" advice on bulk orders.
 
-## Admin board + VVIP tips
+**One thing I did NOT bring into the app, on purpose**: the real site's
+"no social media ads" rule (advertising these bundles on social media gets
+the Techlink account deleted). That's a policy aimed at **you**, the
+account holder, not something to put on a customer-facing page — just
+flagging it here so you don't lose your API access by advertising the
+bundles themselves on social media. Advertising your own storefront is a
+different thing and presumably fine — if you're unsure where that line is,
+worth confirming with Techlink directly.
 
-**Important correction on how this is built:** the original spec for this feature said to "enable Lovable Cloud." Lovable Cloud is a hosted backend (Supabase-based) tied specifically to projects built with Lovable's own app builder — it isn't something that can be switched on inside a separately-hosted FastAPI/Streamlit codebase like this one. Rather than skip the feature or silently misrepresent what was built, this uses a from-scratch equivalent that fits this stack, with the same data shape and security posture that was requested:
+## On pricing — what's live vs what's fixed
 
-- `app/store.py` — SQLite (swap for Postgres if you run multiple instances). Three tables: `profiles` (email + password hash only — **no privilege flags live here**), `user_roles` (role grants as their own rows), `tips`.
-- `app/auth.py` — password hashing via stdlib `hashlib.scrypt` (no new heavy dependency) and JWT sessions via the already-listed `PyJWT` package.
-- `app/admin_board.py` — the routes themselves.
+You shared real screenshots of the agent site, and they confirmed something
+important: **data bundle prices are not fixed** — MTN's own catalogue alone
+has ~30 different SKUs split across No Expiry / Hourly / Night / Daily /
+Weekly / Monthly, and AirtelTigo's is a completely different set (BigTime,
+Fuse Voice and Data, Sika Kokoo, XXL Family Pack). AT and Telecel each have
+their own separate pricing too, and the docs are explicit that this catalog
+comes from the provider live so "nothing drifts out of sync."
 
-Endpoints:
+Given that, I did **not** hardcode your screenshots into the app — copying
+today's prices into code would make them wrong the moment Techlink updates
+their catalogue. Instead, `/data` calls `GET /data/bundles` live, every
+time, through `pages/api/techlink/data-bundles.js`. Once your API key is
+set, whatever a customer sees is whatever Techlink is actually charging you
+right now — always correct, no maintenance.
 
-| Method & path | Access | Purpose |
-|---|---|---|
-| `POST /auth/signup`, `POST /auth/login` | Public | Email/password accounts; returns a bearer token |
-| `GET /tips` | Public (optional auth) | Free tips in full; VVIP tips as locked teasers unless the caller is VVIP or admin |
-| `GET /tips/record?days=30` | Public | Won/Lost/win-rate from settled tips in the window |
-| `GET/POST /admin/tips`, `PUT/DELETE /admin/tips/{id}` | Admin only | Create/edit/delete a tip |
-| `POST /admin/tips/{id}/settle` | Admin only | Mark Won / Lost / Void |
-| `GET /admin/members`, `POST /admin/members/{id}/vvip` | Admin only | Member list + VVIP toggle |
+The same live-lookup approach is used for:
+- **AFA fee** — pulled from `GET /products/afa-price` (your screenshot showed GHS 12.00 today; the app doesn't hardcode that number, it asks Techlink)
+- **Water bill amount** — resolved from `POST /korba/validate`, not typed by the customer
+- **TV subscription amount** — resolved from smartcard validation, not typed by the customer
+- **Result checker prices** — pulled from `GET /products/checker-prices` and `GET /result-check-service/prices`
 
-Security notes, since this replaces a Postgres-RLS-based design with plain SQL:
+The only prices a customer types themselves are airtime top-up amount and
+ECG top-up amount, because those are genuinely open-ended (you decide how
+much airtime or electricity you want) — Techlink's docs confirm both are
+priced by amount, not by catalogue.
 
-- There's no database-level row-level security here (SQLite doesn't have it) — the exact same guarantee is instead enforced in `admin_board.py`'s route layer: every admin route depends on `require_role("admin")`, which calls `Store.has_role()` **fresh against the database on every request**. JWTs carry only a user id and expiry, no role claims, specifically so that revoking VVIP or admin access takes effect immediately rather than waiting for a token to expire — there's a regression test (`test_revoking_vvip_relocks_immediately_without_a_new_token`) proving this.
-- The first admin account is created via `ADMIN_BOOTSTRAP_EMAIL`/`ADMIN_BOOTSTRAP_PASSWORD` in `.env` — it only ever runs while no admin exists yet, so it's safe to leave set after your first login.
-- A minimal admin UI (sign in/up, post/settle/delete tips, member VVIP toggles) is built into the Streamlit dashboard, running in-process against the same SQLite file as the API. That's a convenience for solo/local operation, not a substitute for the API's own auth in a real multi-user deployment — both enforce the same role checks either way.
-- Out of scope, matching the original request: shots/possession/player props/half-time markets, Asian handicap, and VVIP payment collection (flag members manually via the admin board for now).
+**Worth knowing — airtime has no built-in margin.** The docs state the
+airtime service fee (currently 2%, live at `GET /products/airtime-fee`,
+proxied here at `/api/techlink/airtime-fee`) is charged to **your own**
+Techlink wallet, not the customer — "the wallet is debited with the total."
+Since your customer pays you exactly the face value they asked for via
+Paystack, and Techlink then takes face value **plus** 2% from your wallet,
+airtime orders lose you a small amount by default unless you build a markup
+into what you charge. Data bundles, water, TV and AFA don't have this
+issue — their prices already come straight from Techlink's own catalogue.
+Simplest fix if you want one: charge the customer face value × 1.02 (or
+round up) instead of the exact amount they typed — that's a one-line change
+in `pages/airtime.js` and `pages/api/orders/create.js` if you want it; I
+left it as pure pass-through for now rather than guessing your margin
+strategy for you.
 
-### Syncing to Appwrite (optional)
+**On water and TV validation** — I flagged this as ambiguous earlier, but a
+closer re-read of the docs resolved most of it: water bill validation is
+confirmed as `POST /korba/validate`, and TV smartcard validation is
+confirmed as `POST /provider/validate`. The one remaining thing worth a
+quick live test: that shared `/provider/validate` path takes a `"service"`
+field for GWCL water validation but a `"billType"` field for TV validation,
+per the docs' own examples — a small naming quirk on a shared endpoint,
+not real uncertainty about which endpoint to call.
 
-`app/appwrite_sync.py` adds a genuine, working (not stub) one-way sync: after every signup, tip create/update/settle/delete, and VVIP grant/revoke, the app also best-effort mirrors that write into an Appwrite database using the official `appwrite` Python SDK (verified against SDK v24.0.0's real method signatures). It's a mirror, not a backend swap — SQLite stays the source of truth this app reads from, and a failed Appwrite call is logged and swallowed rather than breaking the request. There's no sync in the other direction: edits made directly in the Appwrite console won't flow back into this app.
+## Customer dashboard
 
-This replaces the old `AppwriteAuthService` in `app/services/auth.py`, which was a dead stub — defined, but never called from anywhere in the app despite the config settings suggesting otherwise. That file has been removed.
+`/dashboard` is not a full login system — it remembers the email a customer
+used at checkout (saved in their browser) and looks up every order tied to
+that email or phone via `/api/orders/track`. This matters because several
+services aren't instant:
+- The result-checker "check it for you" service is a manual lookup — no immediate delivery.
+- Any order can, in practice, sit briefly if Techlink's own fulfillment is delayed (the docs mention this for the general order flow too — "providers settle asynchronously").
 
-**Full step-by-step Appwrite Console setup (creating the project, database, collections, attributes, permissions, and API key) is in the accompanying PDF guide** — it's long enough that it doesn't belong inline here. In short, once you've followed it, set `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`, `APPWRITE_API_KEY`, `APPWRITE_DATABASE_ID`, `APPWRITE_PROFILES_COLLECTION_ID`, and `APPWRITE_TIPS_COLLECTION_ID` in `.env`, `pip install -r requirements-optional.txt`, and restart the app — `GET /health` will report `"appwrite_sync_configured": true` once it's live.
+The dashboard tells the customer plainly when something is still pending. If
+you want real accounts with passwords later, that's a bigger addition (see
+"What I didn't build" below).
 
-**Free-tier gotcha worth knowing before you rely on this for anything:** as of February 27, 2026, Appwrite auto-pauses free-tier projects with no development activity for 7 consecutive days (per Appwrite's own documentation). If your app syncs infrequently, your project can go to sleep and silently stop accepting writes until you manually resume it in the console — the PDF guide covers this.
+## Should document services (business registration, passports, merchant SIM, affidavits) be added?
 
-## Sofascore provider (scores/fixtures only, no odds)
+Short answer: **the API supports it, but I'd hold off** — here's why.
 
-`FOOTBALL_PROVIDER=sofascore` wraps the third-party `EasySoccerData` package as a fallback for scores/fixtures when you don't want to deal with API-Football's free-plan season restriction. It is deliberately scores/fixtures-only — `/match/{id}/odds` and `/match/{id}/value-bets` will return nothing useful for it, since Sofascore's free site has no bookmaker odds.
+Every one of those four services (`/business/register`, `/passport/apply`,
+`/merchant-sim/apply`, `/affidavit/apply`) is `multipart/form-data` with 10+
+required fields including photo/document uploads (Ghana Card, signatures,
+birth certificates), and some require a Bearer JWT login flow rather than
+just your API key. That's a meaningfully different, much larger product —
+closer to a government-services portal than an airtime/data storefront.
+Building it properly means: file upload handling and storage, a login
+system (the JWT auth endpoints aren't wired up anywhere in this project),
+and careful validation matching each service's specific required-field list.
 
-**Read this before enabling it — it's a materially different kind of dependency than the REST-only providers above:**
+If you want this later, it's a real, scoped project on its own — happy to
+build it as a phase 2 once the core storefront is live and proven. For now
+I'd rather ship what's here solidly than half-build four complex document
+flows.
 
-- **Not a lightweight HTTP client.** It drives a real headless Chromium browser via Playwright to get past Sofascore's bot protection. Install with `pip install -r requirements-optional.txt` (not in the base `requirements.txt`, to keep the default install light), then run `playwright install chromium` once, or point `SOFASCORE_BROWSER_PATH` at an existing Chrome/Chromium binary.
-- **Heavier at runtime.** A live browser process per app instance (~150-300MB RAM, multi-second startup). Likely won't run on a typical free-tier PaaS web dyno without a custom Docker image bundling Chromium. Call `provider.close()` (the FastAPI app already does this on shutdown) or the browser process leaks.
-- **Licensing:** `EasySoccerData` is GPL-3.0 (per its own PyPI metadata). If you plan to distribute or run this app commercially, have that combination checked against GPL-3.0's terms — this is a fact to check, not legal advice, and no other dependency here carries that restriction.
-- **Packaging gotcha we found:** `EasySoccerData`'s PyPI metadata only declares `httpx` as a dependency, but its Sofascore module unconditionally imports `playwright`. A bare `pip install EasySoccerData` will raise `ModuleNotFoundError` on a clean environment — `requirements-optional.txt` installs `playwright` alongside it for you, but you still need the separate `playwright install chromium` step.
-- **It works by circumventing bot detection, not calling a sanctioned API.** Treat it as a fragile smoke-testing fallback, not a production data source, and check Sofascore's terms of service before relying on it further.
+## What changed from the wallet version
 
-Practical differences from `ApiFootballProvider`: `get_events()` upstream only accepts a single date or `live=True` (no date range), so `fixtures()` makes one browser call per calendar day and is capped at 14 days per call (raises `ValueError` beyond that — pass `league`+`season` as Sofascore's own tournament/season ids, discoverable via `esd`'s `search()`, to use a single tournament lookup instead). `season` is left blank on returned fixtures since Sofascore's event payload doesn't include it directly.
+- The wallet balance / "top up wallet" screen is gone.
+- Every purchase (airtime, data, bills, AFA) now opens a Paystack payment
+  popup for the customer's card, mobile money, or bank transfer.
+- Fulfillment (actually sending the airtime/data/bill payment via Techlink)
+  only happens **after** your server independently confirms the payment
+  with Paystack — never based on what the browser reports. This is what
+  stops someone from faking a success message to get a free order.
 
-## livescoreFootball provider (scores/fixtures only, no key, unverified response shape)
 
-`FOOTBALL_PROVIDER=livescorefootball` wraps [rezarahiminia/livescoreFootball](https://github.com/rezarahiminia/livescoreFootball) (worldcup26.ir) — a free, open-source, no-API-key REST API for English and Spanish club football (Premier League, EFL, FA Cup, LaLiga, LaLiga 2, Copa del Rey, women's competitions).
+## Before you can take real payments
 
-**Fact-checked directly against the project's own GitHub README before integrating** (not taken on trust): the listener→MongoDB→read-only-API architecture, the England/Spain coverage, and the "no API key currently required" claim are all confirmed from the primary source, and the project has real, independent adoption (451 stars, 92 forks at the time of writing) — this is meaningfully more credible than some other football-data projects circulating with self-promotional or AI-targeted marketing copy attached (a different one was checked and rejected during this same review for exactly that reason).
+1. **Get a real Techlink API key.** The endpoints are all wired up
+   correctly now (based on your PDF documentation and screenshots) — the
+   only missing piece is your actual key. Get one from your Techlink agent
+   dashboard (Auth & API Keys → Create key), set `TECHLINK_API_KEY` in your
+   environment (`tlg_test_...` while testing, `tlg_live_...` once live),
+   and everything in `lib/techlink.js` will start making real calls.
 
-**What's still unverified, and why the code below is written defensively:**
+2. **Get your Paystack keys.** Dashboard → Settings → API Keys & Webhooks.
+   Use the test keys first (`sk_test_...` / `pk_test_...`).
 
-- **No API key is a current gap, not a guarantee.** The project's own docs state "API-key issuance and per-customer quotas are not implemented yet" — this could change without notice.
-- **The exact JSON field names are not confirmed.** This sandbox has no network path to worldcup26.ir, so `_normalize_livescorefootball_fixture` in `app/data_providers.py` checks several plausible key names per field (`homeTeam`/`home_team`/`home`, etc.) rather than assuming one. If fields come back empty once you actually run this against the live API, that function is where to fix the mapping — log one real response first.
-- **The underlying upstream data source isn't named.** The README calls the response shape "provider-compatible" without saying which provider; the league-slug convention (`eng.1`, `esp.1`) resembles ESPN's unofficial site API, but this isn't confirmed. Treat it with the same "likely unofficial source" caution as the Sofascore provider above.
-- **No odds at all** — this source doesn't have them, so `/match/{id}/value-bets` will always be empty for fixtures from this provider (not a bug in this adapter).
+## Database — detailed Supabase workflow
 
-Unlike API-Football, there's no "all leagues" fixtures endpoint here — every call needs a league slug (e.g. `eng.1` for the Premier League, `esp.1` for LaLiga; the full list is at `GET /get/soccer/leagues` on the live site). Set `LIVESCOREFOOTBALL_LEAGUE` in `.env`, or pass `league=` per call.
+Orders, customers, and feedback are stored in **Postgres, via Supabase**
+(`lib/store.js`, `lib/customers.js`, `lib/feedback.js` — all now talk to
+Supabase instead of an in-memory array). Supabase was chosen because:
 
-## Multi-provider football data (free-first)
+- Free tier is enough for a store this size to start on.
+- It's plain Postgres underneath — if you ever outgrow Supabase, the data
+  moves to any other Postgres host with no rewrite.
+- One dashboard to browse orders/customers/feedback as tables, without
+  writing SQL, if you ever want to look something up by hand.
 
-The app is now provider-agnostic. Set `FOOTBALL_PROVIDER=auto` to use the configured chain in `FOOTBALL_PROVIDER_CHAIN`; providers that require credentials are skipped automatically when their key is missing. This means the default chain can stay broad without making a clean install fail because an optional provider is unavailable.
+**Important — Supabase is a database only.** It does not host your website
+and has nothing to do with your domain name. It stores data; Vercel (or
+another host) runs the actual Next.js app and serves it to visitors. See
+"Domain and hosting" below for that half.
 
-The recommended free-first chain is:
+**Exactly what to do, in order:**
 
-```text
-thesportsdb -> api-football -> football-data -> livescorefootball -> sofascore
+1. **Create the project.** Go to [supabase.com](https://supabase.com) →
+   sign up (free) → **New project**. Pick a name (e.g. "pjdigitalservices"),
+   set a database password (save it somewhere — you likely won't need it
+   again since the app connects via API key, not this password), pick a
+   region close to Ghana (Europe West is typically the closest available
+   region), and create the project. Takes about 2 minutes to provision.
+
+2. **Run the schema.** In the left sidebar, click **SQL Editor** → **New
+   query**. Open `supabase/schema.sql` from this project on your computer,
+   copy its entire contents, paste into the editor, and click **Run**. You
+   should see "Success. No rows returned." This creates three tables:
+   `orders`, `customers`, `feedback`. Confirm by clicking **Table Editor**
+   in the sidebar — you should see all three listed, empty.
+
+3. **Get your credentials.** Sidebar → **Project Settings** (gear icon) →
+   **API**. Copy two values:
+   - **Project URL** (looks like `https://xxxxx.supabase.co`) → this is `SUPABASE_URL`
+   - **service_role secret** (under "Project API keys" — NOT the `anon`/`public` one) → this is `SUPABASE_SERVICE_ROLE_KEY`
+
+4. **Put them in your environment.** Locally, paste both into `.env.local`.
+   Once you deploy (see the deployment workflow further down), paste the
+   same two values into Vercel's Project Settings → Environment Variables.
+
+5. **Verify the connection.** Run the app locally (`npm run dev`), place
+   one test order all the way through (with Paystack test keys), then check
+   Supabase's **Table Editor → orders** — your test order should appear as
+   a row. If it doesn't, double check the two env vars are spelled exactly
+   right and that you ran the schema in step 2.
+
+**Keeping the schema in sync later:** if I (or you) add a new field to an
+order in the future, the change shows up as a comment at the top of
+`supabase/schema.sql` (an `alter table ...` line) — run just that one line
+in the SQL Editor rather than the whole file again, so you don't lose
+existing data.
+
+**Row Level Security:** Supabase turns RLS on by default for new tables,
+and that's fine left as-is — this app only ever talks to Postgres using the
+`service_role` key from server-side code, which bypasses RLS entirely. You
+don't need to write any policies.
+
+## Domain and hosting
+
+Supabase does **not** provide web hosting or a domain — it's the database
+only. For the actual website:
+
+- **Hosting: Vercel** (recommended, already covered in the deployment
+  workflow below). Free tier is enough to start, it's built by the same
+  team as Next.js so it "just works" with zero config, and it gives you a
+  free `https://yourproject.vercel.app` URL immediately with HTTPS already
+  set up.
+- **Domain name:** buy one separately from any registrar — Namecheap,
+  GoDaddy, or a Ghanaian registrar if you want a `.com.gh` — then attach it
+  in Vercel under **Project Settings → Domains**. Vercel gives you DNS
+  records to add at your registrar; once added (usually live within an
+  hour), your custom domain serves the same app over HTTPS automatically.
+- You do not need a domain to launch — the free `vercel.app` URL is a real,
+  working, secure address. A custom domain is purely about branding
+  (`pjdigitalservices.com` instead of `pjdigitalservices.vercel.app`) and can be
+  added at any time without redeploying anything.
+
+## Is this compatible with desktop, mobile, and Android 9+?
+
+Yes. This is a standard responsive website (not a native app), so it runs
+in any modern browser on any device — desktop Windows/Mac/Linux, iPhone,
+and Android. Specifically on Android 9: Android's Chrome browser
+auto-updates independently of the OS version, so an Android 9 phone today
+is almost certainly running a recent Chrome release, and everything this
+app uses (fetch, CSS Grid/Flexbox, service workers for the "Add to Home
+Screen" install prompt) has been supported in Chrome since well before
+Android 9 shipped in 2018. The layout is built mobile-first with a single
+responsive breakpoint approach (flexible grids, wrapping navigation), so it
+resizes cleanly from a small phone screen up to a wide desktop monitor
+without a separate mobile version to maintain.
+
+One caveat: very old or unusual browsers (Internet Explorer, or Android's
+old stock "Internet" browser predating Chrome) aren't tested against and
+may render imperfectly — but for a Ghanaian customer base on Chrome
+(by far the dominant browser on Android), this is a non-issue.
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env.local
+## Production hardening applied in v1.1.0
+
+This version includes the production fixes identified during the security/architecture review:
+
+- Upgraded the app target from unsupported Next.js 14 to Next.js 16.3.3 / React 19.2. Next.js currently lists 16.x as Active LTS and 14.x as unsupported; Vercel also issued an August 2026 security release for 16.3.3 and 15.5.24.
+- Replaced the browser-stored admin password/header with an HttpOnly, signed admin session cookie. Set `ADMIN_SESSION_SECRET` to a long random secret. The shared `ADMIN_PASSWORD` remains server-side only.
+- Customer order tracking now requires both the exact order reference and checkout email and returns only customer-safe order fields.
+- Fulfillment is now an atomic claim/state flow: `pending -> payment_verified/ready -> processing -> fulfilled` with retryable failures. This prevents a webhook and browser callback from both sending the same order to Techlink.
+- Paystack webhooks verify the signature/payment and acknowledge quickly; the actual Techlink fulfillment is handled by the browser callback or `/api/jobs/fulfill`. Paystack's current webhook guidance specifically recommends returning HTTP 200 promptly and notes failed webhooks are retried.
+- Added a protected fulfillment worker endpoint using `CRON_SECRET`. Configure an external scheduler or your hosting platform's cron facility to call `POST /api/jobs/fulfill` with `Authorization: Bearer $CRON_SECRET`.
+- Added basic API rate limiting for order creation, tracking, feedback and AI chat. For a multi-instance deployment, also use your host/WAF or a distributed rate limiter.
+- Added an optional AI support route. With `GEMINI_API_KEY` set, the chat uses `GEMINI_MODEL` (default `gemini-flash-latest`); without a key it automatically falls back to the built-in FAQ assistant. Live order context is only fetched when the customer supplies both reference and checkout email.
+- The AI is support-only: it cannot charge customers, cannot bypass Paystack, and is instructed not to request or repeat card/PIN/Ghana Card details.
+
+### Required deployment steps
+
+1. Run the updated `supabase/schema.sql` migration on your existing database (or create the fresh schema).
+2. Add `ADMIN_SESSION_SECRET` and `CRON_SECRET`; rotate any old admin password/header secrets that may have been exposed during development.
+3. Set `PAYSTACK_SECRET_KEY`, `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY`, `TECHLINK_API_KEY` and `SUPABASE_URL`. Prefer Supabase's current `sb_secret_...` server key where your project provides it; otherwise the legacy service-role key remains supported but must stay backend-only.
+4. If using AI, set `GEMINI_API_KEY` and optionally `GEMINI_MODEL`.
+5. Configure your scheduler to call `/api/jobs/fulfill` regularly. The worker retries failed fulfillment up to `MAX_FULFILLMENT_ATTEMPTS`; after that, an admin should inspect the order.
+6. Complete Paystack test-mode and Techlink test-key transactions before switching to live credentials.
+
+
+# fill in .env.local with your real keys (Supabase, Paystack, Techlink)
+npm run dev
 ```
 
-`FOOTBALL_PROVIDER_MODE=fallback` uses the first source that returns data. Set `FOOTBALL_PROVIDER_MODE=merge` to query every available source and de-duplicate identical fixtures, with earlier providers winning when records overlap. The `/providers` endpoint reports the active chain without exposing secrets.
+Visit `http://localhost:3000`.
 
-### Current provider roles
+## Environment variables
 
-| Provider | Current free access | Best role in this app | Notes |
-|---|---|---|---|
-| **API-Football / API-Sports** | 100 requests/day on the current free plan | Odds, events, lineups, fixtures and richer match data | Requires a free API key; free coverage can be season-limited. |
-| **football-data.org** | Free forever; 10 calls/min on the free plan | Fixtures, schedules and competition data | Free scores/schedules are delayed; requires a free registered token. |
-| **TheSportsDB V1** | Free shared key `123`; 30 requests/min currently documented | Zero-setup fixture/team fallback | V1 is free; V2/livescores are premium. |
-| **Sofascore** | Optional | Scores/fixtures fallback | Browser automation, not a sanctioned REST API; keep optional. |
-| **livescoreFootball** | Optional no-key community source | Selected league fixtures/scores | Coverage and availability can change; keep as a fallback only. |
+| Variable | Where it's used |
+|---|---|
+| `SUPABASE_URL` | Server only — database connection |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only — database connection |
+| `PAYSTACK_SECRET_KEY` | Server only — verifying payments |
+| `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY` | Browser — opening the payment popup |
+| `TECHLINK_API_BASE_URL` | Server only — calling Techlink |
+| `TECHLINK_API_KEY` | Server only — calling Techlink |
+| `ADMIN_PASSWORD` | Server only — gates `/admin` |
+| `NEXT_PUBLIC_SITE_URL` | Your deployed domain |
 
-These limits/features were checked against the providers' current documentation before this integration. API-Football currently advertises 100 requests/day on its free plan and access to endpoints including fixtures, odds, statistics, injuries and predictions; football-data.org currently lists 12 competitions and 10 calls/min on its free tier; TheSportsDB currently documents V1 as free with shared key `123` and a 30 requests/min free limit. citeturn888036search1turn888036search3turn888036search0
+Never put a secret key in anything prefixed `NEXT_PUBLIC_` — those get
+shipped to the browser in plain text.
 
-### Adding another API later
+## How a purchase works
 
-No prediction-engine changes are required. Add a class implementing the existing `FootballProvider` contract, register its short name in `build_provider()`, add its credentials/config fields to `Settings`, then place the name anywhere in `FOOTBALL_PROVIDER_CHAIN`. The composite router handles fallback, de-duplication and provider-specific lookup routing for you.
+1. Customer fills in the form and clicks pay → `pages/api/orders/create.js`
+   creates a pending order **priced by the server**, not the browser.
+2. Paystack Popup opens (`pages/index.js`) using the public key.
+3. On success, the browser calls `pages/api/orders/verify.js`, which asks
+   Paystack directly to confirm the payment really went through, checks the
+   amount matches, and only then calls Techlink to deliver the order.
+4. Set up the Paystack webhook (`pages/api/paystack/webhook.js`) as a second,
+   more reliable path — see below.
 
-### Recommended `.env`
+## Setting up the Paystack webhook
 
-```text
-FOOTBALL_PROVIDER=auto
-FOOTBALL_PROVIDER_CHAIN=thesportsdb,api-football,football-data,livescorefootball,sofascore
-FOOTBALL_PROVIDER_MODE=fallback
-THESPORTSDB_API_KEY=123
-THESPORTSDB_LEAGUE_ID=4328
-FOOTBALL_DATA_API_KEY=
-API_FOOTBALL_KEY=
+In your Paystack dashboard → Settings → API Keys & Webhooks, set the webhook
+URL to:
+
+```
+https://yourdomain.com/api/paystack/webhook
 ```
 
-With only the settings above, TheSportsDB V1 is the active real-data source/fallback. Adding `API_FOOTBALL_KEY` automatically makes API-Football available to the chain; adding `FOOTBALL_DATA_API_KEY` does the same for football-data.org.
+This matters because the `verify` call above only fires if the customer's
+browser is still open. The webhook fires from Paystack's servers regardless,
+so orders still get delivered if someone closes the tab right after paying.
+Both paths are safe to have running together — fulfillment only ever
+happens once per order.
 
-## Run locally
+## Full deployment workflow
 
-PowerShell:
+Follow this in order — each step depends on the one before it.
 
-```powershell
-cd C:\path\to\football_predictor_v2
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env
-streamlit run frontend\streamlit_app.py
+**1. Database.** Do the Supabase setup above (create project, run
+`supabase/schema.sql`, grab the URL and service role key).
+
+**2. Techlink.** Get the confirmed endpoint details from your Postman
+collection and fill in `lib/techlink.js` (see the section below). Nothing
+downstream matters if this step is skipped — orders will "succeed" on
+payment but never actually deliver.
+
+**3. Paystack test keys.** Get your **test** keys from the Paystack
+dashboard (Settings → API Keys & Webhooks). Put them in `.env.local` as
+`PAYSTACK_SECRET_KEY` / `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY`.
+
+**4. Run it locally and test the full loop.**
+```bash
+npm install
+npm run dev
 ```
+Go through every flow — airtime, data, bills, AFA — using
+[Paystack's test card numbers](https://paystack.com/docs/payments/test-payments)
+(no real money moves with test keys). Confirm: the order appears in
+`/admin`, the amount matches, and `fulfilled` becomes `true`.
 
-`.env.example` now defaults to `FOOTBALL_PROVIDER=auto`, using a free-first provider chain. With the documented TheSportsDB V1 key `123`, the app can fetch real fixture data without a paid subscription. Add `API_FOOTBALL_KEY` and/or `FOOTBALL_DATA_API_KEY` later and the auto chain will make those providers available automatically.
+**5. Push to GitHub.** Commit everything except `.env.local` (already
+covered by a typical `.gitignore` — double check it's not committed, since
+it would contain live secrets once you fill it in for step 8).
 
-API:
+**6. Deploy to Vercel** (made by the creators of Next.js; free tier is
+enough to start):
+   - Import the GitHub repo at [vercel.com](https://vercel.com).
+   - Add every variable from `.env.example` under Project Settings →
+     Environment Variables — still using the Paystack **test** keys for now.
+   - Deploy. You'll get a `https://yourproject.vercel.app` URL.
 
-```powershell
-python -m uvicorn app.api:app --reload --port 8000
-```
+   Any other Node.js host (Render, Railway, your own VPS) works too —
+   `npm run build` then `npm run start`.
 
-## Real football API
+**7. Point the Paystack webhook at your deployed URL.** Paystack dashboard
+→ Settings → API Keys & Webhooks → webhook URL:
+`https://yourproject.vercel.app/api/paystack/webhook`. Still using test
+mode, place one more test order and confirm the webhook fired (Paystack's
+dashboard shows webhook delivery logs).
 
-Set `FOOTBALL_PROVIDER` to your implemented provider adapter and place its credentials in `.env`. The included generic REST adapter demonstrates the normalized contract; map endpoint names/fields to the provider you subscribe to.
+**8. Set your admin password and confirm `/admin` is locked.** Set
+`ADMIN_PASSWORD` in Vercel's environment variables, redeploy, and check
+that `/admin` asks for it.
 
-## Groq
+**9. Switch to live Paystack keys.** Once steps 4–8 all check out, replace
+the test keys with live keys (`sk_live_...` / `pk_live_...`) in Vercel's
+environment variables and redeploy. Update the webhook URL in the live
+mode view of the Paystack dashboard too — test and live mode have separate
+webhook settings.
 
-Set `GROQ_API_KEY`. The app can generate explanations such as why a market made the shortlist. Keep all Groq calls server-side.
+**10. Add your own domain** (optional) under Vercel → Settings → Domains,
+and update `NEXT_PUBLIC_SITE_URL` to match.
 
-## Appwrite
+**11. Add real PWA icons** at `public/icons/icon-192.png` and
+`icon-512.png` so "Add to Home Screen" shows your actual logo instead of
+nothing.
 
-The `app/services/payments.py` module is a verification boundary only: USDT/MTN MoMo/Telecel calls return `pending` or `unsupported` until a real server-side merchant/blockchain verification integration is configured. Do not treat a `pending` response as successful payment or activate VVIP access from it.
+**12. Do one real, small live-money order yourself** before telling
+customers you're open — pay with your own card/momo for the cheapest
+airtime amount, confirm it actually lands on your phone, and check it shows
+correctly in `/admin`.
 
-## Tests
+After that, you're live. Keep an eye on `/admin` and the Paystack dashboard
+for the first few days in case anything about Techlink's real behavior
+(error formats, delays) needs a tweak in `lib/techlink.js`.
 
-```powershell
-python -m unittest discover -s tests -v
-```
+## Making it installable as an app
 
-The current offline suite reports **62 passed, 14 skipped** when optional browser/Appwrite dependencies are absent. The optional Appwrite CI job installs its SDK and runs those tests separately; the core suite requires no network access or live API keys.
+This is already a PWA (`public/manifest.json` + `public/sw.js`). Once
+deployed on `https://`, visitors on Android/Chrome get an "Install app"
+prompt, and on iPhone they can use Safari's Share → "Add to Home Screen".
+No app store submission needed.
 
-## API-Football integration
+If you specifically want a listing in the Google Play Store / Apple App
+Store later, the standard route is wrapping this same website with
+[Capacitor](https://capacitorjs.com/) — it packages a web app into a native
+app shell without rewriting anything here. That's a separate step to take
+once the website itself is live and working.
 
-The project now includes a first-class `ApiFootballProvider` for API-Football v3 using the `x-apisports-key` request header. Set:
+## Still to do
 
-```text
-FOOTBALL_PROVIDER=api-football
-FOOTBALL_API_BASE_URL=https://v3.football.api-sports.io
-API_FOOTBALL_KEY=your_key_here
-```
+- [ ] Get a real `TECHLINK_API_KEY` (`tlg_test_...` first) and do one live test of `/provider/validate` for both water (GWCL) and TV to confirm the field-naming quirk noted above
+- [ ] Run `supabase/schema.sql` in your Supabase project and fill in `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (see the detailed workflow above)
+- [ ] Set `ADMIN_PASSWORD` before deploying publicly
+- [ ] Add real icon files at `public/icons/icon-192.png` and `icon-512.png`
+- [ ] Work through the deployment workflow above, in order
+- [ ] Review and tweak the homepage copy in `pages/index.js` to taste
+- [ ] Decide if/when you want document services (business reg, passports, merchant SIM, affidavits) as a phase 2
+- [ ] Review the FAQ wording on `/faq` — it's adapted from Techlink's real FAQ content but written by me, not you
+- [ ] If you also want a real MTN Master delivery-status widget (queue position, live "typical wait" like the real site shows), that needs `GET /orders/dashboard/stats` wired up — not built yet, happy to add once you confirm you want it
+- [ ] Run `npm run build` locally once you have real keys, just to catch anything this sandbox couldn't test (see note below)
 
-The backend normalizes API-Football fixtures into the internal schema and exposes provider-specific event, lineup, and odds routes under `/match/{fixture_id}/...`. Keep the API key server-side; never expose it in the frontend.
 
-**Free-plan caveats (verified against api-football.com, Sept 2026):** the free plan is **100 requests/day**. API-Football states that all plans include the competitions/endpoints, while **Free plans are limited in available seasons**. If a free-key fixture query is empty, pass `league` and `season` explicitly and check the coverage/status available to your key instead of assuming the endpoint itself is unavailable. The app now caches identical provider reads for `PROVIDER_CACHE_TTL_SECONDS` (default 60s) to help stay under the daily cap while you iterate, and returns a clear message instead of a raw 500 if you hit the 429 rate limit.
-
-## Newer endpoints
-
-- `GET /match/{id}/value-bets?min_edge=0.05` — same markets as `/markets`, filtered to selections where the model's fair price beats the supplied bookmaker odds by at least `min_edge`. Only 1X2 currently carries bookmaker odds, so this is effectively a 1X2 value filter until another market's odds are wired in.
-- `GET /match/{id}/explain` — runs the existing (previously unused) Groq explainer against a fixture's shortlist and returns the text.
-- `GET /fixtures?league=&season=` — optional filters, mainly useful to work around the free-plan season restriction above.
-
-## Free API recommendations for match data/analysis (implementation notes)
-
-| Provider | Free tier | Good for | Watch out for |
-|---|---|---|---|
-| **API-Football** (api-sports.io) — used by `ApiFootballProvider` | 100 req/day; endpoints available, with free-plan season restrictions | Odds, lineups, events, statistics, fixtures | Daily cap and limited available seasons on the free plan |
-| **Sofascore via `EasySoccerData`** — used by `SofascoreProvider` | Free, no key, no request cap seen in practice | Scores/fixtures fallback with no season restriction | No odds at all; needs Playwright+Chromium; GPL-3.0 dependency; scraping-via-browser-automation, not a sanctioned API — see the Sofascore section above before using it |
-| **football-data.org** | 10 req/min, ~12 top competitions, no live scores, no lineups | Quick fixtures/results/standings smoke-testing without season restrictions | Scores are delayed on the free tier; no odds at all |
-| **TheSportsDB** | Public free key (`123`), 30 req/min | Real fixtures/results/team data without a paid subscription | No free live scores; no betting odds; shared/rate-limited key |
-
-The app now has normalized adapters for API-Football, football-data.org and TheSportsDB, plus optional livescoreFootball and Sofascore fallbacks. Provider selection is controlled by `FOOTBALL_PROVIDER_CHAIN` and `FOOTBALL_PROVIDER_MODE`, so additional APIs can be added behind the same interface without changing the prediction engine. TheSportsDB can supply free fixtures/form; API-Football can add odds/events/lineups when a key is available.
-
-## Groq model
-
-`llama-3.3-70b-versatile` (the model this project used to default to) was **decommissioned by Groq on 2026-08-16**. The default is now `openai/gpt-oss-120b`, Groq's current recommended general-purpose replacement — check `https://console.groq.com/docs/models` if you hit a model-not-found error later, since Groq's lineup changes over time.
-
+## Support complaint transaction requirements (v1.2.2)
+For data and airtime complaints, the support form and chatbot require Transaction ID, Amount, Data/Airtime Requested, Recipient/Beneficiary, Transaction Date & Time, Transaction Details, and the complaint description. For other products, the normal support form is used with transaction details relevant to the service.
