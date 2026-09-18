@@ -111,6 +111,18 @@ class TheSportsDBProvider(FootballProvider):
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
 
+    @staticmethod
+    def _team_name(row: dict[str, Any], side: str) -> str:
+        """Extract a team name from current/legacy TheSportsDB response shapes."""
+        if side == "home":
+            keys = ("strHomeTeam", "homeTeam", "home_team", "home", "homeTeamName", "homeName")
+        else:
+            keys = ("strAwayTeam", "awayTeam", "away_team", "away", "awayTeamName", "awayName")
+        value = _first(row, *keys, default="")
+        if isinstance(value, dict):
+            value = _first(value, "display_name", "displayName", "name", "shortName", "teamName", default="")
+        return str(value or "").strip()
+
     def _normalize_event(self, row: dict[str, Any]) -> Fixture:
         home_score = row.get("intHomeScore")
         away_score = row.get("intAwayScore")
@@ -122,7 +134,8 @@ class TheSportsDBProvider(FootballProvider):
             away_score = int(away_score) if away_score not in (None, "", "null") else None
         except (TypeError, ValueError):
             away_score = None
-        status_raw = str(row.get("strStatus") or "scheduled").strip().lower()
+
+        status_raw = str(row.get("strStatus") or row.get("status") or "scheduled").strip().lower()
         status = {
             "ns": "scheduled", "tbd": "scheduled", "not started": "scheduled",
             "1h": "in_play", "ht": "paused", "2h": "in_play", "et": "in_play",
@@ -137,15 +150,35 @@ class TheSportsDBProvider(FootballProvider):
             "canc": "cancelled", "cancelled": "cancelled",
             "abd": "abandoned", "abandoned": "abandoned",
             "awd": "technical_loss", "wo": "walkover",
-        }
-        status = status.get(status_raw, status_raw)
+        }.get(status_raw, status_raw)
+
+        raw_home = self._team_name(row, "home")
+        raw_away = self._team_name(row, "away")
+
+        # Accept alternate event-name formats emitted by compatible normalized
+        # feeds. Never invent a team name; only split an explicit match name.
+        if not raw_home or not raw_away:
+            event_name = str(_first(
+                row, "strEvent", "name", "short_name", "shortName", default=""
+            )).strip()
+            for separator in (" vs ", " v ", " at ", " @ "):
+                if separator in event_name:
+                    left, right = [part.strip() for part in event_name.split(separator, 1)]
+                    if not raw_home:
+                        raw_home = left
+                    if not raw_away:
+                        raw_away = right
+                    break
+
         return Fixture(
-            fixture_id=f"thesportsdb-{row.get('idEvent')}",
-            date=self._parse_dt(row.get("strTimestamp") or row.get("dateEvent") or row.get("strTime")),
-            league=str(row.get("strLeague") or "Unknown"),
-            season=str(row.get("strSeason") or "Unknown"),
-            home_team=str(row.get("strHomeTeam") or "Home"),
-            away_team=str(row.get("strAwayTeam") or "Away"),
+            fixture_id=f"thesportsdb-{row.get('idEvent') or row.get('id')}",
+            date=self._parse_dt(
+                row.get("strTimestamp") or row.get("dateEvent") or row.get("strTime") or row.get("date")
+            ),
+            league=str(row.get("strLeague") or row.get("league") or "Unknown"),
+            season=str(row.get("strSeason") or row.get("season") or "Unknown"),
+            home_team=raw_home or "Unknown",
+            away_team=raw_away or "Unknown",
             status=status,
             home_score=home_score,
             away_score=away_score,
