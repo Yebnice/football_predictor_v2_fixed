@@ -83,14 +83,9 @@ if api_football_key:
     settings.football_api_key = api_football_key
 if football_data_key:
     settings.football_data_api_key = football_data_key
-if groq_api_key:
-    settings.groq_api_key = groq_api_key
-if groq_model:
-    settings.groq_model = groq_model
-if gemini_api_key:
-    settings.gemini_api_key = gemini_api_key
-if gemini_model:
-    settings.gemini_model = gemini_model
+# Do not mutate the Pydantic Settings model with dynamically-added fields.
+# Streamlit Cloud can briefly run a mixed cached module set during a deploy;
+# runtime AI credentials are therefore kept in plain local variables instead.
 
 
 
