@@ -561,7 +561,7 @@ class ApiFootballProvider(FootballProvider):
                  timeout: float = 30.0, cache_ttl_seconds: float = 60.0,
                  preferred_bookmaker: str = "", enrich_list_fixtures: bool = False,
                  fetch_discipline_stats: bool = False, default_leagues: str = "",
-                 use_standings_form: bool = True):
+                 use_standings_form: bool = False):
         if not api_key:
             raise ValueError("API_FOOTBALL_KEY is required when FOOTBALL_PROVIDER=api-football")
         self.base_url = base_url.rstrip("/")
@@ -612,14 +612,14 @@ class ApiFootballProvider(FootballProvider):
     def fixtures(self, start: datetime, end: datetime, live: bool = False,
                  league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
         if live:
-            selected = ([x.strip() for x in str(league).split(",") if x.strip()] if league is not None else list(self.default_leagues))
+            selected = ([league] if league is not None and not isinstance(league, str) else [x.strip() for x in str(league).split(",") if x.strip()] if league is not None else list(self.default_leagues))
             params = {"live": "-".join(selected) if selected else "all"}
             payload = self._get("/fixtures", params, cacheable=False)
             rows = payload.get("response", [])
             out = [_normalize_api_football_fixture(row) for row in rows]
             return [fx for fx in out if start <= fx.date <= end]
 
-        selected = ([x.strip() for x in str(league).split(",") if x.strip()] if league is not None else list(self.default_leagues))
+        selected = ([league] if league is not None and not isinstance(league, str) else [x.strip() for x in str(league).split(",") if x.strip()] if league is not None else list(self.default_leagues))
         if not selected:
             raise ValueError("API-Football fixture requests require API_FOOTBALL_LEAGUES to be configured")
 
