@@ -1,6 +1,16 @@
 from datetime import datetime, timedelta, timezone
 import html
 import json
+import sys
+from pathlib import Path
+
+# Streamlit Cloud executes a script inside the frontend/ directory, so the
+# repository root is not guaranteed to be on sys.path. Add it explicitly so
+# imports such as `from app.config import settings` work in cloud deployment.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
