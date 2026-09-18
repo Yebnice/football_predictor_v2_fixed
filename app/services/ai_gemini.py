@@ -32,7 +32,10 @@ class GeminiExplainer:
             model=self.model,
             contents=prompt,
             config=types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(thinking_level="medium")
+                max_output_tokens=1200,
+                thinking_config=types.ThinkingConfig(
+                    thinking_level=types.ThinkingLevel.MEDIUM
+                ),
             ),
         )
         return (response.text or "").strip() or "No Gemini explanation generated."
