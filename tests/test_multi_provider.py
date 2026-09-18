@@ -238,6 +238,39 @@ class TestProviderRouter(unittest.TestCase):
         self.assertEqual({x["league"] for x in called}, {"4328", "4335"})
         self.assertEqual({x["season"] for x in called}, {"2026-2027"})
 
+    @patch("app.data_providers.httpx.Client.get")
+    def test_allsports_discovery_maps_selected_api_football_league(self, mock_get):
+        def response(url, *args, **kwargs):
+            met = kwargs.get("params", {}).get("met")
+            if met == "Leagues":
+                return Resp({"success": 1, "result": [
+                    {"league_key": "148", "league_name": "Premier League", "country_name": "England"},
+                    {"league_key": "999", "league_name": "Some Other League", "country_name": "England"},
+                ]})
+            return Resp({"success": 1, "result": [{
+                "event_key": "1",
+                "event_date": "2026-09-19",
+                "event_time": "15:00",
+                "event_home_team": "Arsenal",
+                "event_away_team": "Chelsea",
+                "event_live": "0",
+                "event_status": "NS",
+                "country_name": "England",
+                "league_name": "Premier League",
+                "league_key": "148",
+            }]})
+        mock_get.side_effect = response
+        provider = AllSportsAPIProvider("key", cache_ttl_seconds=0)
+        composite = CompositeFootballProvider([("allsportsapi", provider)])
+        rows = composite.fixtures(
+            datetime(2026, 9, 19, tzinfo=timezone.utc),
+            datetime(2026, 9, 20, tzinfo=timezone.utc),
+            league="39",
+        )
+        self.assertEqual(len(rows), 1)
+        fixture_calls = [c.kwargs["params"] for c in mock_get.call_args_list if c.kwargs.get("params", {}).get("met") == "Fixtures"]
+        self.assertEqual(fixture_calls[0]["leagueId"], "148")
+
     def test_numeric_selection_routes_supported_league_to_football_data(self):
         fd = Mock()
         fd.fixtures.return_value = [
