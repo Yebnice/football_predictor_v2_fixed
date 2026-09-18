@@ -63,11 +63,10 @@ class Fixture:
     stats: dict[str, Any] = field(default_factory=dict)
     home_discipline: TeamDiscipline = field(default_factory=TeamDiscipline)
     away_discipline: TeamDiscipline = field(default_factory=TeamDiscipline)
-    # Defaults are modeling assumptions, not live league stats: total corners
-    # ~9.6 sits between the Premier League's 2026/27 average (8.97) and the
-    # Champions League's 2025/26 average (9.7) per FootyStats; total cards
-    # ~3.8 reflects the commonly-cited 3.5-4.0 range for competitive top-flight
-    # leagues. Override per-fixture when you have real league figures.
+    # Defaults are modeling assumptions, not live league statistics.
+    # Real per-league/per-team values should be supplied by a provider when
+    # available; otherwise the corners/cards estimator uses these neutral
+    # fallback assumptions and labels its outputs as estimates.
     league_avg_corners: float = 9.6
     league_avg_cards: float = 3.8
 
