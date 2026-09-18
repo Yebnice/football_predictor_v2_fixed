@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     football_api_base_url: str = ""
     football_api_key: str = ""
     api_football_key: str = ""
-    api_football_leagues: str = DEFAULT_MAJOR_LEAGUE_IDS
+    api_football_leagues: str = "39,140,78,135"
     api_football_use_standings_form: bool = True
     football_data_api_key: str = ""
     football_data_base_url: str = "https://api.football-data.org/v4"
