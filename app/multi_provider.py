@@ -57,7 +57,12 @@ class CompositeFootballProvider(FootballProvider):
         minimum = max(0, int(minimum or 0))
         for name, provider in self.providers:
             try:
-                rows = provider.fixtures(start, end, live=live, league=league, season=season)
+                # The sidebar's league selector uses API-Football numeric IDs.
+                # Fallback providers have different league-id namespaces, so do
+                # not pass API-Football IDs into them. They use their configured
+                # native/default competition instead.
+                provider_league = league if name in {"api-football", "api-sports", "apisports"} else None
+                rows = provider.fixtures(start, end, live=live, league=provider_league, season=season)
                 # Do not treat structurally empty fixtures as useful data. A
                 # provider can return rows with missing participants when its
                 # upstream schema changes; those rows must not block a later
