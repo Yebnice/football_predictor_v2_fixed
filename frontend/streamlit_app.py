@@ -93,7 +93,7 @@ if api_football_key:
 if football_data_key:
     settings.football_data_api_key = football_data_key
 if allsportsapi_key:
-    settings.allsportsapi_key = allsportsapi_key
+    settings.allsportsapi_api_key = allsportsapi_key
 if database_url:
     settings.db_path = database_url
 # Do not mutate the Pydantic Settings model with dynamically-added fields.
