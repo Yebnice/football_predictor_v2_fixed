@@ -18,8 +18,13 @@ class EngineTests(unittest.TestCase):
         e=FootballProbabilityEngine(8)
         ms=e.markets(self.fixture())
         names={(x.market,x.selection) for x in ms}
-        for required in [("1X2","Home Win"),("1X2","Draw"),("1X2","Away Win"),("BTTS","Yes"),("Total Goals","Over 1.5"),("Correct Score","1-0")]:
-            self.assertIn(required,names)
+        for required in [("1X2","Home Win"),("1X2","Draw"),("1X2","Away Win"),
+                         ("BTTS","Yes"),
+                         ("Total Goals","Over 1.5"), ("Total Goals","Under 1.5"),
+                         ("Total Goals","Over 2.5"), ("Total Goals","Under 2.5"),
+                         ("Total Goals","Over 3.5"), ("Total Goals","Under 3.5"),
+                         ("Correct Score","1-0")]:
+            self.assertIn(required, names)
     def test_team_form_changes_expected_goals(self):
         e = FootballProbabilityEngine(8)
         neutral = self.fixture()
