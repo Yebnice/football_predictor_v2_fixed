@@ -30,7 +30,7 @@ services:
       - key: FOOTBALL_PROVIDER
         value: auto   # uses the configured real-provider chain
       - key: FOOTBALL_PROVIDER_CHAIN
-        value: thesportsdb,api-football,football-data,livescorefootball,sofascore
+        value: api-football,football-data,livescorefootball,thesportsdb,sofascore
       - key: FOOTBALL_PROVIDER_MODE
         value: fallback
       - key: FOOTBALL_DATA_API_KEY
