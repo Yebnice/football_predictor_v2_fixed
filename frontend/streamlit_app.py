@@ -767,6 +767,7 @@ else:
                 with c2:
                     if st.button("🔄 Refresh detailed data", key=f"refresh_detail_{fixture_id}", use_container_width=True):
                         st.session_state.pop(detail_state_key, None)
+                        st.session_state.pop(f"h2h_{fixture_id}", None)
                         st.rerun()
 
     # Corners & cards section
