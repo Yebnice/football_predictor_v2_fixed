@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from app.data_providers import AllSportsAPIProvider, FootballDataOrgProvider, TheSportsDBProvider, build_provider, build_provider_from_settings
+from app.data_providers import AllSportsAPIProvider, ISportsAPIProvider, FootballDataOrgProvider, TheSportsDBProvider, build_provider, build_provider_from_settings
 from app.multi_provider import CompositeFootballProvider
 from app.schemas import Fixture, TeamForm
 
@@ -20,6 +20,40 @@ class Resp:
     def json(self):
         return self._payload
 
+
+class TestISportsAPIProvider(unittest.TestCase):
+    @patch("app.data_providers.httpx.Client.get")
+    def test_normalizes_livescore_response(self, mock_get):
+        kickoff = int(datetime(2026, 9, 18, 20, tzinfo=timezone.utc).timestamp())
+        mock_get.return_value = Resp({"code": 0, "message": "success", "data": [{
+            "matchId": "123456",
+            "leagueId": "39",
+            "leagueName": "England Premier League",
+            "matchTime": kickoff,
+            "status": 1,
+            "homeId": "1",
+            "homeName": "Arsenal",
+            "awayId": "2",
+            "awayName": "Chelsea",
+            "homeScore": 1,
+            "awayScore": 0,
+            "homeCorner": 3,
+            "awayCorner": 1,
+            "homeYellow": 1,
+            "awayYellow": 0,
+            "season": "2026",
+        }]})
+        p = ISportsAPIProvider("key", cache_ttl_seconds=0)
+        rows = p.fixtures(
+            datetime(2026, 9, 18, 19, tzinfo=timezone.utc),
+            datetime(2026, 9, 18, 21, tzinfo=timezone.utc),
+            live=True,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].fixture_id, "isports-123456")
+        self.assertEqual(rows[0].status, "in_play")
+        self.assertEqual(rows[0].stats["home_corner"], 3)
+        self.assertEqual(mock_get.call_args.kwargs["params"]["api_key"], "key")
 
 class TestAllSportsAPIProvider(unittest.TestCase):
     @patch("app.data_providers.httpx.Client.get")
