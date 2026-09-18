@@ -135,6 +135,7 @@ class CompositeFootballProvider(FootballProvider):
             if api_league_selection and name not in {
                 "api-football", "api-sports", "apisports",
                 "football-data", "football-data-org", "football-data.org",
+                "isportsapi", "isports",
                 "thesportsdb", "the-sports-db", "thesportsdb-v1",
             }:
                 continue
