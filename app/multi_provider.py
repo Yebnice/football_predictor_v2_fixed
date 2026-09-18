@@ -199,6 +199,16 @@ class CompositeFootballProvider(FootballProvider):
                 logger.debug("%s lineups failed: %s", name, exc)
         return []
 
+    def head_to_head(self, home_team_id: int | str, away_team_id: int | str, limit: int = 5) -> list[dict[str, Any]]:
+        for name, provider in self.providers:
+            try:
+                data = provider.head_to_head(home_team_id, away_team_id, limit=limit)
+                if data:
+                    return data
+            except Exception as exc:
+                logger.debug("%s head-to-head failed: %s", name, exc)
+        return []
+
     def odds(self, fixture_id: str) -> dict[str, Any]:
         ordered = self._ordered_for_fixture(fixture_id)
         # First try the fixture id as supplied. This keeps native ids working.
