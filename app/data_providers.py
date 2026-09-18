@@ -67,6 +67,133 @@ class _TTLCache:
             self._store[key] = (time.monotonic() + self.ttl, value)
 
 
+class ISportsAPIProvider(FootballProvider):
+    """Adapter for iSports API Football Livescores.
+
+    The documented /sport/football/livescores endpoint returns all football
+    matches for the current GMT+0 day, including status, scores, cards,
+    corners, ranks, venue and season. This provider is intentionally used for
+    live mode because its documented livescores interface is the strongest
+    match for that use case.
+    """
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.isportsapi.com",
+        timeout: float = 20.0,
+        cache_ttl_seconds: float = 10.0,
+    ):
+        if not api_key:
+            raise ValueError("ISPORTS_API_KEY is required when iSports API is enabled")
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.client = httpx.Client(timeout=timeout, headers={"Accept": "application/json"})
+        self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
+
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        query = {"api_key": self.api_key, **(params or {})}
+        key = f"{path}?{sorted(query.items())}"
+        if self._cache is not None:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
+        response = self.client.get(f"{self.base_url}{path}", params=query)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("iSports API returned an unexpected JSON payload")
+        if str(payload.get("code")) not in {"0", "200"} and payload.get("message"):
+            raise RuntimeError(f"iSports API request failed: {payload.get('message')}")
+        if self._cache is not None:
+            self._cache.set(key, payload)
+        return payload
+
+    @staticmethod
+    def _parse_time(value: Any) -> datetime:
+        try:
+            dt = datetime.fromtimestamp(int(value), tz=timezone.utc)
+            return dt
+        except (TypeError, ValueError, OSError, OverflowError):
+            return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _status(value: Any) -> str:
+        try:
+            state = int(value)
+        except (TypeError, ValueError):
+            return "scheduled"
+        return {
+            0: "scheduled",
+            1: "in_play",
+            2: "paused",
+            3: "in_play",
+            4: "in_play",
+            5: "in_play",
+            -1: "finished",
+            -10: "cancelled",
+            -11: "scheduled",
+            -12: "terminated",
+            -13: "interrupted",
+            -14: "postponed",
+        }.get(state, "scheduled")
+
+    @staticmethod
+    def _normalise(row: dict[str, Any]) -> Fixture:
+        return Fixture(
+            fixture_id=f"isports-{row.get('matchId')}",
+            date=ISportsAPIProvider._parse_time(row.get("matchTime")),
+            league=str(row.get("leagueName") or "Unknown"),
+            season=str(row.get("season") or "Unknown"),
+            home_team=str(row.get("homeName") or "Unknown").strip(),
+            away_team=str(row.get("awayName") or "Unknown").strip(),
+            status=ISportsAPIProvider._status(row.get("status")),
+            home_score=row.get("homeScore"),
+            away_score=row.get("awayScore"),
+            stats={
+                "source": "isportsapi",
+                "home_team_id": row.get("homeId"),
+                "away_team_id": row.get("awayId"),
+                "league_id": row.get("leagueId"),
+                "league_short_name": row.get("leagueShortName"),
+                "round": row.get("round"),
+                "venue": row.get("location"),
+                "home_rank": row.get("homeRank"),
+                "away_rank": row.get("awayRank"),
+                "home_red": row.get("homeRed"),
+                "away_red": row.get("awayRed"),
+                "home_yellow": row.get("homeYellow"),
+                "away_yellow": row.get("awayYellow"),
+                "home_corner": row.get("homeCorner"),
+                "away_corner": row.get("awayCorner"),
+                "update_time": row.get("updateTime"),
+            },
+        )
+
+    def fixtures(
+        self,
+        start: datetime,
+        end: datetime,
+        live: bool = False,
+        league: int | str | None = None,
+        season: int | str | None = None,
+    ) -> list[Fixture]:
+        payload = self._get("/sport/football/livescores")
+        rows = payload.get("data") or payload.get("result") or []
+        if isinstance(rows, dict):
+            rows = list(rows.values())
+        fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
+        # The endpoint is explicitly today's GMT+0 feed. Keep only the caller's
+        # window; live mode will normally be a subset of today's feed.
+        return [fx for fx in fixtures if start <= fx.date <= end]
+
+    def fixture_by_id(self, fixture_id: str) -> Fixture | None:
+        match_id = fixture_id.removeprefix("isports-")
+        payload = self._get("/sport/football/schedule/basic", {"matchId": match_id})
+        rows = payload.get("data") or payload.get("result") or []
+        if isinstance(rows, dict):
+            rows = list(rows.values())
+        return self._normalise(rows[0]) if rows and isinstance(rows[0], dict) else None
+
 class AllSportsAPIProvider(FootballProvider):
     """Adapter for AllSportsAPI Football API V2.
 
