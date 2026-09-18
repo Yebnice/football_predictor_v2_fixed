@@ -1331,16 +1331,19 @@ class LivescoreFootballProvider(FootballProvider):
 
 
 def _extract_rows(payload: Any, keys: tuple[str, ...]) -> list[dict[str, Any]]:
-    """This provider's exact response envelope isn't confirmed (see
-    LivescoreFootballProvider's docstring), so check several plausible
-    wrapper keys before giving up, rather than assuming one."""
+    """Extract only mapping rows from a provider payload.
+    
+    Free endpoints can return status/message strings or mixed arrays when there
+    are no fixtures or when a request shape is unsupported. The normalizers
+    require dictionaries, so discard non-object rows defensively.
+    """
     if isinstance(payload, list):
-        return payload
+        return [row for row in payload if isinstance(row, dict)]
     if isinstance(payload, dict):
         for key in keys:
             value = payload.get(key)
             if isinstance(value, list):
-                return value
+                return [row for row in value if isinstance(row, dict)]
     return []
 
 
