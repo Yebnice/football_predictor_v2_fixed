@@ -142,6 +142,7 @@ class CompositeFootballProvider(FootballProvider):
         for name, provider in self.providers:
             if api_league_selection and name not in {
                 "api-football", "api-sports", "apisports",
+                "bigballsdata", "big-balls-data", "bigballs",
                 "football-data", "football-data-org", "football-data.org",
                 "isportsapi", "isports",
                 "thesportsdb", "the-sports-db", "thesportsdb-v1",
@@ -163,7 +164,7 @@ class CompositeFootballProvider(FootballProvider):
                             rows.extend(provider.fixtures(start, end, live=live, league=slug, season=season))
                     else:
                         rows = provider.fixtures(start, end, live=live, league=None, season=season)
-                                elif name in {"football-data", "football-data-org", "football-data.org"} and api_league_selection:
+                elif name in {"football-data", "football-data-org", "football-data.org"} and api_league_selection:
                     tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
                     translated = [API_FOOTBALL_TO_FOOTBALL_DATA[token] for token in tokens if token in API_FOOTBALL_TO_FOOTBALL_DATA]
                     if translated:
@@ -177,40 +178,10 @@ class CompositeFootballProvider(FootballProvider):
                     else:
                         rows = []
                 elif name in {"allsportsapi", "all-sports-api", "allsports"} and api_league_selection:
-                    # AllSportsAPI uses its own league IDs. Discover only leagues
-                    # included in the user's subscription and match them against
-                    # the app's API-Football league names before requesting events.
-                    from .leagues import MAJOR_LEAGUES
-                    tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
+                    # AllSportsAPI uses its own league IDs. This adapter does not
+                    # currently expose a league catalogue, so skip numeric-league
+                    # translation here and allow the next mapped provider to try.
                     rows = []
-                    catalog = provider.leagues()
-                    for token in tokens:
-                        try:
-                            api_name = MAJOR_LEAGUES.get(int(token), "")
-                        except (TypeError, ValueError):
-                            api_name = ""
-                        if not api_name:
-                            continue
-                        country, _, league_name = api_name.partition(" — ")
-                        target_text = f"{country} {league_name}".lower()
-                        candidates = []
-                        for item in catalog:
-                            label = f"{item.get('country_name','')} {item.get('league_name','')}".lower()
-                            score = 0
-                            if country and country.lower() in label:
-                                score += 4
-                            for word in league_name.lower().replace("-", " ").split():
-                                if len(word) >= 4 and word in label:
-                                    score += 1
-                            if score >= 5 and item.get("league_key") is not None:
-                                candidates.append((score, str(item["league_key"])))
-                        candidates.sort(reverse=True)
-                        if candidates:
-                            rows.extend(
-                                provider.fixtures(
-                                    start, end, live=live, league=candidates[0][1], season=season
-                                )
-                            )
                 elif name in {"thesportsdb", "the-sports-db", "thesportsdb-v1"} and api_league_selection:
                     # Translate the app's API-Football numeric league selection
                     # into TheSportsDB's league namespace and query each selected
