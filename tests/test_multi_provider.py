@@ -155,6 +155,34 @@ class TestProviderRouter(unittest.TestCase):
         self.assertEqual(out.home_team, "Real Home")
         primary.fixture_by_id.assert_not_called()
 
+    def test_api_football_numeric_selection_falls_back_to_thesportsdb_mapping(self):
+        api = Mock()
+        api.fixtures.side_effect = RuntimeError(
+            "API-Football error: {'plan': 'Free plans do not have access to this season, try from 2022 to 2024.'}"
+        )
+        db = Mock()
+        db.fixtures.side_effect = lambda start, end, live=False, league=None, season=None: [
+            Fixture(
+                f"thesportsdb-{league}",
+                start + timedelta(hours=1),
+                "Mapped League",
+                str(season),
+                f"Home {league}",
+                f"Away {league}",
+            )
+        ]
+        composite = CompositeFootballProvider([("api-football", api), ("thesportsdb", db)])
+        rows = composite.fixtures(
+            datetime(2026, 9, 18, tzinfo=timezone.utc),
+            datetime(2026, 9, 20, tzinfo=timezone.utc),
+            league="39,140",
+            season=2026,
+        )
+        self.assertEqual(len(rows), 2)
+        called = [call.kwargs for call in db.fixtures.call_args_list]
+        self.assertEqual({x["league"] for x in called}, {"4328", "4335"})
+        self.assertEqual({x["season"] for x in called}, {"2026-2027"})
+
     def test_fallback_uses_second_provider_when_first_fails(self):
         first = Mock()
         second = Mock()
