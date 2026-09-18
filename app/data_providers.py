@@ -928,7 +928,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         settings.api_football_key or settings.football_api_key,
         cache_ttl_seconds=settings.provider_cache_ttl_seconds,
         sofascore_browser_path=settings.sofascore_browser_path or None,
-        livescorefootball_league=(settings.livescorefootball_leagues or settings.livescorefootball_league or None),
+        livescorefootball_league=(getattr(settings, "livescorefootball_leagues", "") or settings.livescorefootball_league or None),
         odds_preferred_bookmaker=settings.odds_preferred_bookmaker,
         api_football_enrich_lists=settings.api_football_enrich_lists,
         api_football_fetch_discipline=settings.api_football_fetch_discipline,
@@ -1141,11 +1141,11 @@ class LivescoreFootballProvider(FootballProvider):
             all_rows.extend(rows)
             if not isinstance(payload, dict) or not rows:
                 break
-            total_pages = payload.get("totalPages") or payload.get("pages")
+            total_pages = payload.get("totalPages") or payload.get("pageCount") or payload.get("pages")
             has_more = payload.get("hasMore")
             if has_more is None:
                 has_more = payload.get("has_next")
-            current_page = payload.get("currentPage") or payload.get("page") or page
+            current_page = payload.get("currentPage") or payload.get("pageIndex") or payload.get("page") or page
             if total_pages is not None:
                 if current_page >= total_pages:
                     break
@@ -1153,7 +1153,11 @@ class LivescoreFootballProvider(FootballProvider):
                 if not has_more:
                     break
             else:
-                break  # No pagination metadata recognized: assume a single page.
+                # No recognized pagination metadata: continue only when the page is full.
+                if len(rows) < int(params.get("limit", 100)):
+                    break
+                page += 1
+                continue
             page += 1
         return all_rows
 
@@ -1186,6 +1190,7 @@ class LivescoreFootballProvider(FootballProvider):
                     "status": "all",
                     "from": start.strftime("%Y%m%d"),
                     "to": end.strftime("%Y%m%d"),
+                    "limit": 200,
                 }
                 rows = self._get_all_pages(
                     f"/get/soccer/{league_slug}/fixtures",
@@ -1204,7 +1209,8 @@ class LivescoreFootballProvider(FootballProvider):
                     continue
                 if str(fx.away_team).strip().casefold() in {"", "unknown"}:
                     continue
-                all_fixtures.append(fx)
+                if start <= fx.date <= end:
+                    all_fixtures.append(fx)
 
         all_fixtures.sort(key=lambda x: x.date)
         return all_fixtures
