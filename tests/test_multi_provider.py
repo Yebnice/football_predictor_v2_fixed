@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from app.data_providers import FootballDataOrgProvider, TheSportsDBProvider, build_provider, build_provider_from_settings
+from app.data_providers import AllSportsAPIProvider, FootballDataOrgProvider, TheSportsDBProvider, build_provider, build_provider_from_settings
 from app.multi_provider import CompositeFootballProvider
 from app.schemas import Fixture, TeamForm
 
@@ -19,6 +19,61 @@ class Resp:
 
     def json(self):
         return self._payload
+
+
+class TestAllSportsAPIProvider(unittest.TestCase):
+    @patch("app.data_providers.httpx.Client.get")
+    def test_normalizes_fixture_response(self, mock_get):
+        mock_get.return_value = Resp({"success": 1, "result": [{
+            "event_key": "11205",
+            "event_date": "2026-09-19",
+            "event_time": "18:30",
+            "event_home_team": "Newcastle Jets",
+            "home_team_key": "1056",
+            "event_away_team": "Brisbane Roar",
+            "away_team_key": "399",
+            "event_final_result": "",
+            "event_status": "NS",
+            "event_live": "0",
+            "country_name": "Australia",
+            "league_name": "A-League",
+            "league_key": "49",
+            "event_stadium": "McDonald Jones Stadium",
+        }]})
+        p = AllSportsAPIProvider("key", cache_ttl_seconds=0)
+        rows = p.fixtures(
+            datetime(2026, 9, 19, tzinfo=timezone.utc),
+            datetime(2026, 9, 20, tzinfo=timezone.utc),
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].fixture_id, "allsports-11205")
+        self.assertEqual(rows[0].home_team, "Newcastle Jets")
+        self.assertEqual(rows[0].stats["league_id"], "49")
+        self.assertEqual(mock_get.call_args.kwargs["params"]["met"], "Fixtures")
+        self.assertEqual(mock_get.call_args.kwargs["params"]["APIkey"], "key")
+
+    @patch("app.data_providers.httpx.Client.get")
+    def test_livescore_uses_documented_endpoint(self, mock_get):
+        mock_get.return_value = Resp({"success": 1, "result": [{
+            "event_key": "11205",
+            "event_date": "2026-09-19",
+            "event_time": "18:30",
+            "event_home_team": "Newcastle Jets",
+            "event_away_team": "Brisbane Roar",
+            "event_live": "1",
+            "event_status": "74",
+            "country_name": "Australia",
+            "league_name": "A-League",
+            "league_key": "49",
+        }]})
+        p = AllSportsAPIProvider("key", cache_ttl_seconds=0)
+        rows = p.fixtures(
+            datetime(2026, 9, 19, 18, tzinfo=timezone.utc),
+            datetime(2026, 9, 19, 20, tzinfo=timezone.utc),
+            live=True,
+        )
+        self.assertEqual(rows[0].status, "in_play")
+        self.assertEqual(mock_get.call_args.kwargs["params"]["met"], "Livescore")
 
 
 class TestTheSportsDBProvider(unittest.TestCase):
