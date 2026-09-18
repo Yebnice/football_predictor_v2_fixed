@@ -560,13 +560,16 @@ class ApiFootballProvider(FootballProvider):
     def __init__(self, api_key: str, base_url: str = "https://v3.football.api-sports.io",
                  timeout: float = 30.0, cache_ttl_seconds: float = 60.0,
                  preferred_bookmaker: str = "", enrich_list_fixtures: bool = False,
-                 fetch_discipline_stats: bool = False):
+                 fetch_discipline_stats: bool = False, default_leagues: str = "",
+                 use_standings_form: bool = True):
         if not api_key:
             raise ValueError("API_FOOTBALL_KEY is required when FOOTBALL_PROVIDER=api-football")
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
         self.preferred_bookmaker = preferred_bookmaker
+        self.default_leagues = [x.strip() for x in str(default_leagues or '').split(',') if x.strip()]
+        self.use_standings_form = bool(use_standings_form)
         # Off by default: enriching every fixture in a list view costs up to
         # 2 extra /fixtures calls per unique team (form) plus 1 per fixture
         # (odds), which can blow through the free plan's 100/day cap fast.
