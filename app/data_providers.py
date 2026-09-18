@@ -928,7 +928,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         settings.api_football_key or settings.football_api_key,
         cache_ttl_seconds=settings.provider_cache_ttl_seconds,
         sofascore_browser_path=settings.sofascore_browser_path or None,
-        livescorefootball_league=settings.livescorefootball_league or None,
+        livescorefootball_league=(settings.livescorefootball_leagues or settings.livescorefootball_league or None),
         odds_preferred_bookmaker=settings.odds_preferred_bookmaker,
         api_football_enrich_lists=settings.api_football_enrich_lists,
         api_football_fetch_discipline=settings.api_football_fetch_discipline,
@@ -1159,16 +1159,55 @@ class LivescoreFootballProvider(FootballProvider):
 
     def fixtures(self, start: datetime, end: datetime, live: bool = False,
                  league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
-        league_slug = self._require_league(league)
-        if live:
-            payload = self._get(f"/get/soccer/{league_slug}/scoreboard",
-                                 {"dates": datetime.now(timezone.utc).strftime("%Y%m%d")}, cacheable=False)
-            rows = _extract_rows(payload, ("events", "games", "matches", "data"))
-        else:
-            params = {"status": "all", "from": start.strftime("%Y%m%d"), "to": end.strftime("%Y%m%d")}
-            rows = self._get_all_pages(f"/get/soccer/{league_slug}/fixtures", params,
-                                        ("fixtures", "events", "games", "matches", "data"))
-        return [_normalize_livescorefootball_fixture(row, league_slug) for row in rows]
+        # A package request without an explicit league uses the configured
+        # comma-separated free league set. An explicit league still targets
+        # exactly one competition.
+        raw_leagues = str(league or self.default_league or "").strip()
+        league_slugs = [x.strip() for x in raw_leagues.split(",") if x.strip()]
+        if not league_slugs:
+            raise ValueError(
+                "LivescoreFootballProvider requires at least one league slug "
+                "(e.g. eng.1,esp.1)."
+            )
+
+        all_fixtures: list[Fixture] = []
+        seen: set[str] = set()
+
+        for league_slug in league_slugs:
+            if live:
+                payload = self._get(
+                    f"/get/soccer/{league_slug}/scoreboard",
+                    {"dates": datetime.now(timezone.utc).strftime("%Y%m%d")},
+                    cacheable=False,
+                )
+                rows = _extract_rows(payload, ("events", "games", "matches", "data"))
+            else:
+                params = {
+                    "status": "all",
+                    "from": start.strftime("%Y%m%d"),
+                    "to": end.strftime("%Y%m%d"),
+                }
+                rows = self._get_all_pages(
+                    f"/get/soccer/{league_slug}/fixtures",
+                    params,
+                    ("fixtures", "events", "games", "matches", "data"),
+                )
+
+            for row in rows:
+                fx = _normalize_livescorefootball_fixture(row, league_slug)
+                # Do not allow a malformed upstream row to crowd out a valid
+                # fixture from another league/provider.
+                if fx.fixture_id in seen:
+                    continue
+                seen.add(fx.fixture_id)
+                if str(fx.home_team).strip().casefold() in {"", "unknown"}:
+                    continue
+                if str(fx.away_team).strip().casefold() in {"", "unknown"}:
+                    continue
+                all_fixtures.append(fx)
+
+        all_fixtures.sort(key=lambda x: x.date)
+        return all_fixtures
 
     def fixture_by_id(self, fixture_id: str) -> Fixture | None:
         parsed = _parse_livescorefootball_id(fixture_id)
