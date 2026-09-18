@@ -75,6 +75,7 @@ football_data_key = _streamlit_secret(
     getattr(settings, "football_data_api_key", ""),
 )
 allsportsapi_key = _streamlit_secret("ALLSPORTSAPI_API_KEY", getattr(settings, "allsportsapi_api_key", ""))
+isports_api_key = _streamlit_secret("ISPORTS_API_KEY", getattr(settings, "isports_api_key", ""))
 groq_api_key = _streamlit_secret("GROQ_API_KEY", getattr(settings, "groq_api_key", ""))
 groq_model = _streamlit_secret("GROQ_MODEL", getattr(settings, "groq_model", "openai/gpt-oss-120b"))
 gemini_api_key = _streamlit_secret("GEMINI_API_KEY", getattr(settings, "gemini_api_key", ""))
@@ -94,6 +95,8 @@ if football_data_key:
     settings.football_data_api_key = football_data_key
 if allsportsapi_key:
     settings.allsportsapi_api_key = allsportsapi_key
+if isports_api_key:
+    settings.isports_api_key = isports_api_key
 if database_url:
     settings.db_path = database_url
 # Do not mutate the Pydantic Settings model with dynamically-added fields.
@@ -424,6 +427,7 @@ with st.sidebar:
     render_markdown(f"""
     <div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.5rem 0.85rem;">
         {_status_row("Data provider", f"{settings.football_provider} · {provider_status}", provider_ok)}
+        {_status_row("iSports API", "Configured" if bool(isports_api_key) else "Key missing", bool(isports_api_key))}
         {_status_row("AllSportsAPI", "Configured" if bool(allsportsapi_key) else "Key missing", bool(allsportsapi_key))}
         {_status_row("football-data.org", "Configured" if bool(football_data_key) else "Key missing", bool(football_data_key))}
         {_status_row("API-Football", data_status, data_ok)}
