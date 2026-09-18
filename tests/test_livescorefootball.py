@@ -89,7 +89,7 @@ class LivescoreFootballProviderTests(unittest.TestCase):
         self.assertEqual(fx.fixture_id, "livescorefootball-eng.1-5001")
         self.assertEqual(fx.home_team, "Arsenal")
         self.assertEqual(fx.away_team, "Chelsea")
-        self.assertEqual(fx.league, "eng.1")
+        self.assertEqual(fx.league, "Premier League")
         self.assertIsNone(fx.home_score)
 
     @patch("httpx.Client.get")
