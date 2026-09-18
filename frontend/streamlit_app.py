@@ -422,6 +422,7 @@ with st.sidebar:
     <div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.5rem 0.85rem;">
         {_status_row("Data provider", f"{settings.football_provider} · {provider_status}", provider_ok)}
         {_status_row("API-Football", data_status, data_ok)}
+        {_status_row("API-Football season", str(_football_season_for(datetime.now(timezone.utc))), True)}
         {_status_row("Groq AI", groq_status, groq_ok)}
         {_status_row("Gemini Flash", gemini_status, gemini_ok)}
         {_status_row("Database", db_status, db_ok)}
