@@ -429,7 +429,17 @@ else:
     # Modern card-based fixture display
     render_markdown('<div class="fixtures-grid">', unsafe_allow_html=True)
 
-    for i, fx in enumerate(fixtures[:10]):  # Show first 10 fixtures for performance
+    max_cards = min(50, len(fixtures))
+    show_cards = st.slider(
+        "Matches shown",
+        min_value=min(10, max_cards),
+        max_value=max_cards,
+        value=min(20, max_cards),
+        step=5 if max_cards >= 15 else 1,
+        help="Shows more of the match pool without requesting additional data from the providers."
+    ) if max_cards > 10 else max_cards
+
+    for i, fx in enumerate(fixtures[:show_cards]):
         best = engine.shortlist(fx, settings.min_selection_confidence, 1)
         if best:
             p = best[0]
@@ -476,6 +486,33 @@ else:
             """, unsafe_allow_html=True)
 
     render_markdown('</div>', unsafe_allow_html=True)
+
+    # Match-data overview: derived only from the already-fetched fixture pool,
+    # so this adds useful information without spending more API quota.
+    overview_rows = []
+    for fx in fixtures:
+        best_market = engine.shortlist(fx, settings.min_selection_confidence, 1)
+        row = {
+            "Kick-off (UTC)": fx.date.strftime("%Y-%m-%d %H:%M"),
+            "League": fx.league,
+            "Match": f"{fx.home_team} vs {fx.away_team}",
+            "Home Form": f"{fx.home_form.wins}W-{fx.home_form.draws}D-{fx.home_form.losses}L",
+            "Away Form": f"{fx.away_form.wins}W-{fx.away_form.draws}D-{fx.away_form.losses}L",
+            "Home GPG": f"{fx.home_form.goals_for_per_game:.2f}",
+            "Away GPG": f"{fx.away_form.goals_for_per_game:.2f}",
+            "Top Model Market": f"{best_market[0].market}: {best_market[0].selection}" if best_market else "—",
+            "Probability": f"{best_market[0].probability:.1%}" if best_market else "—",
+        }
+        overview_rows.append(row)
+
+    if overview_rows:
+        render_markdown("""
+        <div style="background: var(--background-card); border-radius: 12px; padding: 1.25rem; margin: 1rem 0; border: 1px solid var(--border-color);">
+            <h3 style="margin: 0 0 0.5rem 0;">📊 Match Data Overview</h3>
+            <p style="color: var(--text-secondary); margin: 0;">Form, scoring rates and model markets from the current fixture pool. No extra provider calls are made for this table.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(overview_rows), use_container_width=True, hide_index=True)
 
     # Goals markets: show total-match Over/Under probabilities.
     render_markdown("---")
@@ -602,35 +639,105 @@ else:
         fx = next((f for f in fixtures if f.fixture_id == fixture_id), None)
 
         if fx:
-            detailed_fx = provider.fixture_by_id(fixture_id) or fx
-            ms = engine.shortlist(detailed_fx, settings.min_selection_confidence, 5)
+            detail_state_key = f"detailed_fixture_{fixture_id}"
+            detailed_fx = st.session_state.get(detail_state_key)
 
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                if st.button("🔍 Generate AI Analysis", key=f"explain_{fixture_id}", use_container_width=True):
-                    if (ai_engine == "Gemini Flash" and not gemini_ok) or (ai_engine == "Groq" and not groq_ok) or (ai_engine == "Both" and not (gemini_ok or groq_ok)):
-                        st.error("The selected AI engine is not configured. Add the corresponding API key in Streamlit Cloud → Manage app → Settings → Secrets.")
-                    else:
-                        with st.spinner("Analyzing match data..."):
-                            ai_results = []
-                            market_payload = [m.__dict__ for m in ms]
-                            try:
-                                if ai_engine in {"Gemini Flash", "Both"} and gemini_ok:
-                                    ai_results.append(("Gemini Flash", gemini_explainer.explain(detailed_fx.__dict__, market_payload)))
-                                if ai_engine in {"Groq", "Both"} and groq_ok:
-                                    ai_results.append(("Groq", explainer.explain(detailed_fx.__dict__, market_payload)))
+            st.caption(
+                "Detailed data is loaded only when requested, following API-Football's quota-saving guidance. "
+                "The list view above uses the fixture pool already fetched."
+            )
 
-                                for provider_label, analysis_text in ai_results:
-                                    render_markdown(f"""
-                                    <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border-left: 4px solid var(--accent-color);">
-                                        <h4 style="margin: 0 0 1rem 0;">📝 {esc(provider_label)} Analysis</h4>
-                                        <div style="color: var(--text-primary); line-height: 1.6;">
-                                            {esc(analysis_text).replace(chr(10), '<br>')}
+            if st.button("📚 Load full match data", key=f"load_detail_{fixture_id}", use_container_width=True):
+                with st.spinner("Loading form, odds and match details..."):
+                    try:
+                        detailed_fx = provider.fixture_by_id(fixture_id) or fx
+                        st.session_state[detail_state_key] = detailed_fx
+                    except Exception as exc:
+                        st.error(f"❌ Could not load detailed match data: {exc}")
+                        detailed_fx = fx
+
+            if detailed_fx:
+                ms = engine.shortlist(detailed_fx, settings.min_selection_confidence, 10)
+
+                stats = detailed_fx.stats or {}
+                hform, aform = detailed_fx.home_form, detailed_fx.away_form
+                detail_cols = st.columns(4)
+                detail_cols[0].metric("Home form", f"{hform.wins}W {hform.draws}D {hform.losses}L")
+                detail_cols[1].metric("Away form", f"{aform.wins}W {aform.draws}D {aform.losses}L")
+                detail_cols[2].metric("1X2 home odds", f"{detailed_fx.odds.get('home'):.2f}" if detailed_fx.odds.get("home") else "—")
+                detail_cols[3].metric("1X2 away odds", f"{detailed_fx.odds.get('away'):.2f}" if detailed_fx.odds.get("away") else "—")
+
+                facts = [{
+                    "Field": "League",
+                    "Value": detailed_fx.league,
+                }, {
+                    "Field": "Season",
+                    "Value": detailed_fx.season,
+                }, {
+                    "Field": "Kick-off (UTC)",
+                    "Value": detailed_fx.date.strftime("%Y-%m-%d %H:%M"),
+                }, {
+                    "Field": "Status",
+                    "Value": detailed_fx.status,
+                }, {
+                    "Field": "Venue",
+                    "Value": stats.get("venue") or "—",
+                }, {
+                    "Field": "Venue city",
+                    "Value": stats.get("venue_city") or "—",
+                }, {
+                    "Field": "Referee",
+                    "Value": stats.get("referee") or "—",
+                }, {
+                    "Field": "Home scoring rate",
+                    "Value": f"{hform.goals_for_per_game:.2f} goals/game",
+                }, {
+                    "Field": "Away scoring rate",
+                    "Value": f"{aform.goals_for_per_game:.2f} goals/game",
+                }]
+                st.dataframe(pd.DataFrame(facts), use_container_width=True, hide_index=True)
+
+                render_markdown("#### 📈 Top model markets", unsafe_allow_html=False)
+                market_rows = [{
+                    "Market": m.market,
+                    "Selection": m.selection,
+                    "Probability": f"{m.probability:.1%}",
+                    "Fair Odds": f"{m.fair_odds:.2f}" if m.fair_odds else "—",
+                    "Book Odds": f"{m.market_odds:.2f}" if m.market_odds else "—",
+                } for m in ms[:10]]
+                st.dataframe(pd.DataFrame(market_rows), use_container_width=True, hide_index=True)
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("🔍 Generate AI Analysis", key=f"explain_{fixture_id}", use_container_width=True):
+                        if (ai_engine == "Gemini Flash" and not gemini_ok) or (ai_engine == "Groq" and not groq_ok) or (ai_engine == "Both" and not (gemini_ok or groq_ok)):
+                            st.error("The selected AI engine is not configured. Add the corresponding API key in Streamlit Cloud → Manage app → Settings → Secrets.")
+                        else:
+                            with st.spinner("Analyzing match data..."):
+                                ai_results = []
+                                market_payload = [m.__dict__ for m in ms]
+                                try:
+                                    if ai_engine in {"Gemini Flash", "Both"} and gemini_ok:
+                                        ai_results.append(("Gemini Flash", gemini_explainer.explain(detailed_fx.__dict__, market_payload)))
+                                    if ai_engine in {"Groq", "Both"} and groq_ok:
+                                        ai_results.append(("Groq", explainer.explain(detailed_fx.__dict__, market_payload)))
+
+                                    for provider_label, analysis_text in ai_results:
+                                        render_markdown(f"""
+                                        <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border-left: 4px solid var(--accent-color);">
+                                            <h4 style="margin: 0 0 1rem 0;">📝 {esc(provider_label)} Analysis</h4>
+                                            <div style="color: var(--text-primary); line-height: 1.6;">
+                                                {esc(analysis_text).replace(chr(10), '<br>')}
+                                            </div>
                                         </div>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                            except Exception as exc:
-                                st.error(f"❌ AI analysis failed: {str(exc)}")
+                                        """, unsafe_allow_html=True)
+                                except Exception as exc:
+                                    st.error(f"❌ AI analysis failed: {exc}")
+
+                with c2:
+                    if st.button("🔄 Refresh detailed data", key=f"refresh_detail_{fixture_id}", use_container_width=True):
+                        st.session_state.pop(detail_state_key, None)
+                        st.rerun()
 
     # Corners & cards section
     render_markdown("---")
