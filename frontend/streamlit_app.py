@@ -74,6 +74,7 @@ football_data_key = _streamlit_secret(
     "FOOTBALL_DATA_API_KEY",
     getattr(settings, "football_data_api_key", ""),
 )
+bigballsdata_api_key = _streamlit_secret("BIGBALLSDATA_API_KEY", getattr(settings, "bigballsdata_api_key", ""))
 allsportsapi_key = _streamlit_secret("ALLSPORTSAPI_API_KEY", getattr(settings, "allsportsapi_api_key", ""))
 isports_api_key = _streamlit_secret("ISPORTS_API_KEY", getattr(settings, "isports_api_key", ""))
 groq_api_key = _streamlit_secret("GROQ_API_KEY", getattr(settings, "groq_api_key", ""))
@@ -93,6 +94,8 @@ if api_football_key:
     settings.football_api_key = api_football_key
 if football_data_key:
     settings.football_data_api_key = football_data_key
+if bigballsdata_api_key:
+    settings.bigballsdata_api_key = bigballsdata_api_key
 if allsportsapi_key:
     settings.allsportsapi_api_key = allsportsapi_key
 if isports_api_key:
@@ -429,6 +432,7 @@ with st.sidebar:
         {_status_row("Data provider", f"{settings.football_provider} · {provider_status}", provider_ok)}
         {_status_row("iSports API", "Configured" if bool(isports_api_key) else "Key missing", bool(isports_api_key))}
         {_status_row("AllSportsAPI", "Configured" if bool(allsportsapi_key) else "Key missing", bool(allsportsapi_key))}
+        {_status_row("Big Balls Data", "Configured" if bool(bigballsdata_api_key) else "Key missing", bool(bigballsdata_api_key))}
         {_status_row("football-data.org", "Configured" if bool(football_data_key) else "Key missing", bool(football_data_key))}
         {_status_row("API-Football", data_status, data_ok)}
         {_status_row("API-Football season", str(_football_season_for(datetime.now(timezone.utc))), True)}
