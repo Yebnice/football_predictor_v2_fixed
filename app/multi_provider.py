@@ -59,6 +59,23 @@ API_FOOTBALL_TO_THESPORTSDB: dict[str, str] = {
     "188": "4356",  # Australia A-League
 }
 
+# API-Football -> football-data.org competition codes for the competitions
+# currently included in football-data.org's Free tier.
+API_FOOTBALL_TO_FOOTBALL_DATA: dict[str, str] = {
+    "39": "PL",    # England Premier League
+    "140": "PD",   # Spain La Liga
+    "78": "BL1",   # Germany Bundesliga
+    "135": "SA",   # Italy Serie A
+    "61": "FL1",   # France Ligue 1
+    "88": "DED",   # Netherlands Eredivisie
+    "94": "PPL",   # Portugal Primeira Liga
+    "253": "MLS",  # USA MLS (catalogued, not assumed Free-tier)
+    "262": "LMX",  # Mexico Liga MX (catalogued, not assumed Free-tier)
+    "71": "BSA",   # Brazil Serie A
+    "128": "ASL",  # Argentina Liga Profesional (catalogued, not assumed Free-tier)
+}
+
+
 
 class CompositeFootballProvider(FootballProvider):
     """Provider router with graceful fallback across multiple providers.
@@ -120,6 +137,7 @@ class CompositeFootballProvider(FootballProvider):
         for name, provider in self.providers:
             if api_league_selection and name not in {
                 "api-football", "api-sports", "apisports",
+                "football-data", "football-data-org", "football-data.org",
                 "thesportsdb", "the-sports-db", "thesportsdb-v1",
             }:
                 continue
@@ -130,6 +148,19 @@ class CompositeFootballProvider(FootballProvider):
                     rows = provider.fixtures(
                         start, end, live=live, league=provider_league, season=provider_season
                     )
+                elif name in {"football-data", "football-data-org", "football-data.org"} and api_league_selection:
+                    tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
+                    translated = [API_FOOTBALL_TO_FOOTBALL_DATA[token] for token in tokens if token in API_FOOTBALL_TO_FOOTBALL_DATA]
+                    if translated:
+                        rows = []
+                        for competition in dict.fromkeys(translated):
+                            rows.extend(
+                                provider.fixtures(
+                                    start, end, live=live, league=competition, season=season
+                                )
+                            )
+                    else:
+                        rows = []
                 elif name in {"thesportsdb", "the-sports-db", "thesportsdb-v1"} and api_league_selection:
                     # Translate the app's API-Football numeric league selection
                     # into TheSportsDB's league namespace and query each selected
