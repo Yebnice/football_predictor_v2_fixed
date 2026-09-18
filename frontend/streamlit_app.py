@@ -31,23 +31,27 @@ from app.admin_board import bootstrap_admin, serialize_tip
 
 
 def _streamlit_secret(name: str, fallback: str = "") -> str:
-    """Read an AI secret from Streamlit Cloud in several safe formats.
-
-    Supported forms:
-      GROQ_API_KEY = "..."
-      groq_api_key = "..."
-      [groq]
-      api_key = "..."
-    """
+    """Read a Streamlit Cloud secret, supporting flat or nested TOML forms."""
     try:
         secrets = st.secrets
-        value = secrets.get(name)
+        value = secrets.get(name) or secrets.get(name.lower())
         if value in (None, ""):
-            value = secrets.get(name.lower())
-        if value in (None, "") and name.upper() == "GROQ_API_KEY":
-            section = secrets.get("groq")
-            if isinstance(section, dict):
-                value = section.get("api_key") or section.get("GROQ_API_KEY")
+            section_map = {
+                "GROQ_API_KEY": ("groq", "api_key"),
+                "GEMINI_API_KEY": ("gemini", "api_key"),
+                "API_FOOTBALL_KEY": ("api_football", "api_key"),
+                "FOOTBALL_DATA_API_KEY": ("football_data", "api_key"),
+                "DB_PATH": ("database", "url"),
+                "DATABASE_URL": ("database", "url"),
+            }
+            section_name, field_name = section_map.get(name.upper(), (None, None))
+            if section_name:
+                section = secrets.get(section_name)
+                if section is not None:
+                    try:
+                        value = section.get(field_name) or section.get(name)
+                    except AttributeError:
+                        pass
         if value in (None, ""):
             value = fallback
     except Exception:
@@ -74,6 +78,10 @@ groq_api_key = _streamlit_secret("GROQ_API_KEY", getattr(settings, "groq_api_key
 groq_model = _streamlit_secret("GROQ_MODEL", getattr(settings, "groq_model", "openai/gpt-oss-120b"))
 gemini_api_key = _streamlit_secret("GEMINI_API_KEY", getattr(settings, "gemini_api_key", ""))
 gemini_model = _streamlit_secret("GEMINI_MODEL", getattr(settings, "gemini_model", "gemini-3.8-flash"))
+database_url = (
+    _streamlit_secret("DATABASE_URL", "")
+    or _streamlit_secret("DB_PATH", "")
+)
 
 # Pydantic settings are initialized before Streamlit secrets are available to
 # this deployment path. Mirror the runtime secrets into the shared settings
@@ -83,6 +91,8 @@ if api_football_key:
     settings.football_api_key = api_football_key
 if football_data_key:
     settings.football_data_api_key = football_data_key
+if database_url:
+    settings.db_path = database_url
 # Do not mutate the Pydantic Settings model with dynamically-added fields.
 # Streamlit Cloud can briefly run a mixed cached module set during a deploy;
 # runtime AI credentials are therefore kept in plain local variables instead.
@@ -282,16 +292,43 @@ def _get_cached_provider():
 
 provider = _get_cached_provider()
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _fetch_package_fixtures_cached(
+    pool_start_iso: str,
+    pool_end_iso: str,
+    required_count: int,
+    selected_league_ids: tuple[str, ...],
+    _provider,
+):
+    pool_start = datetime.fromisoformat(pool_start_iso)
+    pool_end = datetime.fromisoformat(pool_end_iso)
+    if hasattr(_provider, "providers"):
+        raw_target = {5: 20, 20: 60, 35: 120}.get(required_count, required_count)
+        rows = _provider.fixtures(
+            pool_start,
+            pool_end,
+            league=",".join(selected_league_ids),
+            minimum=raw_target,
+        )
+    else:
+        rows = (
+            _provider.fixtures(pool_start, pool_end, league=",".join(selected_league_ids))
+            if selected_league_ids else []
+        )
+    return rows
+
 def fetch_package_fixtures(start, end, required_count, selected_league_ids):
-    # Normalize package requests to one UTC-day cache window so Daily, Weekly,
-    # and Monthly reuse the same multi-league fixture fetch.
+    # Cache the complete 31-day pool for five minutes so changing unrelated
+    # widgets does not repeat dozens of provider calls and consume quota.
     pool_start = start.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     pool_end = pool_start + timedelta(days=31, hours=23, minutes=59, seconds=59)
-    if hasattr(provider, "providers"):
-        raw_target = {5: 20, 20: 60, 35: 120}.get(required_count, required_count)
-        rows = provider.fixtures(pool_start, pool_end, league=",".join(selected_league_ids), minimum=raw_target)
-    else:
-        rows = provider.fixtures(pool_start, pool_end, league=",".join(selected_league_ids)) if selected_league_ids else []
+    rows = _fetch_package_fixtures_cached(
+        pool_start.isoformat(),
+        pool_end.isoformat(),
+        required_count,
+        tuple(selected_league_ids),
+        provider,
+    )
     return [fx for fx in rows if start <= fx.date <= end]
 engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_coles_rho)
 corners_cards_engine = CornersCardsEngine()
@@ -349,11 +386,13 @@ with st.sidebar:
     provider_ok = bool(active_provider_names)
     provider_status = ", ".join(active_provider_names) if active_provider_names else "Unavailable"
     data_ok = bool(api_football_key)
-    data_status = "API-Football connected" if data_ok else "API-Football key missing"
+    data_status = "Configured" if data_ok else "Key missing"
     groq_ok = bool(groq_api_key)
-    groq_status = "Connected" if groq_ok else "Key missing"
+    groq_status = "Configured" if groq_ok else "Key missing"
     gemini_ok = bool(gemini_api_key)
-    gemini_status = "Connected" if gemini_ok else "Key missing"
+    gemini_status = "Configured" if gemini_ok else "Key missing"
+    db_ok = bool(database_url)
+    db_status = "Persistent DB configured" if db_ok else "Local DB (may reset)"
 
     def _status_row(label: str, value: str, ok: bool) -> str:
         dot_color = "var(--success-color)" if ok else "var(--text-secondary)"
@@ -372,6 +411,7 @@ with st.sidebar:
         {_status_row("API-Football", data_status, data_ok)}
         {_status_row("Groq AI", groq_status, groq_ok)}
         {_status_row("Gemini Flash", gemini_status, gemini_ok)}
+        {_status_row("Database", db_status, db_ok)}
     </div>
     """, unsafe_allow_html=True)
 
