@@ -288,7 +288,7 @@ def fetch_package_fixtures(start, end, required_count, selected_league_ids):
     pool_start = start.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     pool_end = pool_start + timedelta(days=31, hours=23, minutes=59, seconds=59)
     if hasattr(provider, "providers"):
-        raw_target = {5: 10, 20: 40, 35: 70}.get(required_count, required_count)
+        raw_target = {5: 20, 20: 60, 35: 120}.get(required_count, required_count)
         rows = provider.fixtures(pool_start, pool_end, league=",".join(selected_league_ids), minimum=raw_target)
     else:
         rows = provider.fixtures(pool_start, pool_end, league=",".join(selected_league_ids)) if selected_league_ids else []
