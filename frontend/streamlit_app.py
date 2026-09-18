@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import html
 import json
 import sys
+import textwrap
 from pathlib import Path
 
 # Streamlit Cloud executes a script inside the frontend/ directory, so the
@@ -28,9 +29,12 @@ from app.admin_board import bootstrap_admin, serialize_tip
 
 
 
+_RAW_MARKDOWN = st.markdown
+
+
 def render_markdown(body, **kwargs):
     """Render Markdown/HTML blocks without treating Python indentation as a code block."""
-    return st.markdown(textwrap.dedent(body).strip("\n"), **kwargs)
+    return _RAW_MARKDOWN(textwrap.dedent(body).strip("\n"), **kwargs)
 
 def esc(value) -> str:
     """Escape a value before interpolating it into an unsafe_allow_html
@@ -53,7 +57,7 @@ st.set_page_config(
 # a single terracotta accent used sparingly for primary actions and
 # high-confidence states, soft hairline borders instead of heavy drop
 # shadows, and grouped, plainly-labeled sidebar sections.
-st.markdown("""
+render_markdown("""
 <style>
     /* Main theme colors and typography */
     :root {
@@ -232,7 +236,7 @@ slips = SlipGenerator(engine, settings.min_selection_confidence, settings.rng_sa
 explainer = GroqExplainer(settings.groq_api_key, settings.groq_model)
 
 # Modern Header
-st.markdown("""
+render_markdown("""
 <div style="text-align: center; padding: 2rem 0;">
     <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">⚽ Global AI Football Predictor</h1>
     <p style="color: var(--text-secondary); font-size: 1.1rem;">
@@ -243,14 +247,14 @@ st.markdown("""
 
 # Sidebar with modern styling
 with st.sidebar:
-    st.markdown(f"""
+    render_markdown(f"""
     <div style="display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0 1.25rem 0;">
         <div style="width: 32px; height: 32px; border-radius: 9px; background: var(--accent-color); display: flex; align-items: center; justify-content: center; font-size: 1rem;">⚽</div>
         <div style="font-weight: 600; color: var(--text-primary); font-size: 1.05rem;">{esc(settings.app_name)}</div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="settings-group-label">Prediction window</div>', unsafe_allow_html=True)
+    render_markdown('<div class="settings-group-label">Prediction window</div>', unsafe_allow_html=True)
     pkg = st.selectbox(
         "Select Time Window",
         ["Daily", "Weekly", "Monthly", "Live"],
@@ -258,7 +262,7 @@ with st.sidebar:
         key="prediction_package"
     )
 
-    st.markdown('<div class="settings-group-label">Status</div>', unsafe_allow_html=True)
+    render_markdown('<div class="settings-group-label">Status</div>', unsafe_allow_html=True)
     active_provider_names = getattr(provider, "provider_names", [settings.football_provider])
     provider_ok = bool(active_provider_names)
     provider_status = ", ".join(active_provider_names) if active_provider_names else "Unavailable"
@@ -276,15 +280,15 @@ with st.sidebar:
             </span>
         </div>"""
 
-    st.markdown(f"""
+    render_markdown(f"""
     <div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.5rem 0.85rem;">
         {_status_row("Data provider", f"{settings.football_provider} · {provider_status}", provider_ok)}
         {_status_row("AI analysis", groq_status, groq_ok)}
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="settings-group-label">Security</div>', unsafe_allow_html=True)
-    st.markdown("""
+    render_markdown('<div class="settings-group-label">Security</div>', unsafe_allow_html=True)
+    render_markdown("""
     <div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.85rem; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5;">
         VIP, Appwrite, USDT, MTN MoMo and Telecel connectors are backend integration boundaries. Secrets are never exposed in the browser.
     </div>
@@ -315,7 +319,7 @@ except Exception as e:
     fixtures = []
 
 # Modern fixtures header
-st.markdown(f"""
+render_markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin: 2rem 0 1rem 0;">
     <div>
         <h2 style="margin: 0;">📅 {pkg} Predictions</h2>
@@ -325,7 +329,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if not fixtures:
-    st.markdown("""
+    render_markdown("""
     <div style="text-align: center; padding: 3rem; background: var(--background-card); border-radius: 12px; border: 1px dashed var(--border-color);">
         <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
         <h3 style="color: var(--text-secondary);">No Fixtures Available</h3>
@@ -334,7 +338,7 @@ if not fixtures:
     """, unsafe_allow_html=True)
 else:
     # Modern card-based fixture display
-    st.markdown('<div class="fixtures-grid">', unsafe_allow_html=True)
+    render_markdown('<div class="fixtures-grid">', unsafe_allow_html=True)
 
     for i, fx in enumerate(fixtures[:10]):  # Show first 10 fixtures for performance
         best = engine.shortlist(fx, settings.min_selection_confidence, 1)
@@ -352,7 +356,7 @@ else:
                 confidence_class = "status-low"
                 confidence_label = "LOW"
 
-            st.markdown(f"""
+            render_markdown(f"""
             <div class="prediction-card">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
                     <div>
@@ -382,7 +386,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    render_markdown('</div>', unsafe_allow_html=True)
 
     # Generate package button with modern styling
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -402,7 +406,7 @@ else:
                         generated = []
 
                 for s in generated:
-                    st.markdown(f"""
+                    render_markdown(f"""
                     <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border: 1px solid var(--primary-color);">
                         <h3 style="margin: 0 0 1rem 0;">📊 {s.period.title()} Slip #{s.slip_number}</h3>
                         <p style="color: var(--text-secondary); margin: 0 0 1rem 0;">{len(s.selections)} high-confidence selections</p>
@@ -422,8 +426,8 @@ else:
                 st.error(f"❌ Failed to generate package: {str(exc)}")
 
     # Match explanation section
-    st.markdown("---")
-    st.markdown("""
+    render_markdown("---")
+    render_markdown("""
     <div style="margin: 2rem 0 1rem 0;">
         <h2 style="margin: 0;">🤖 AI Match Analysis</h2>
         <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">Get detailed AI-powered explanations for any match</p>
@@ -447,7 +451,7 @@ else:
                     with st.spinner("Analyzing match data..."):
                         try:
                             text = explainer.explain(detailed_fx.__dict__, [m.__dict__ for m in ms])
-                            st.markdown(f"""
+                            render_markdown(f"""
                             <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border-left: 4px solid var(--accent-color);">
                                 <h4 style="margin: 0 0 1rem 0;">📝 Analysis Results</h4>
                                 <div style="color: var(--text-primary); line-height: 1.6;">
@@ -459,12 +463,12 @@ else:
                             st.error(f"❌ Analysis failed: {str(exc)}")
 
     # Corners & cards section
-    st.markdown("---")
+    render_markdown("---")
     if fixtures:
         first_fixture = fixtures[0]
         detailed_first = provider.fixture_by_id(first_fixture.fixture_id) or first_fixture
 
-        st.markdown(f"""
+        render_markdown(f"""
         <div style="margin: 2rem 0 1rem 0;">
             <h2 style="margin: 0;">📈 Corners & Cards Analysis</h2>
             <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">Model estimates from team/league averages — {esc(detailed_first.home_team)} vs {esc(detailed_first.away_team)}</p>
@@ -481,9 +485,9 @@ else:
             cards_markets = [m for m in cc_predictions if "Card" in m.market]
 
             if corners_markets:
-                st.markdown("### 🎯 Total Corners")
+                render_markdown("### 🎯 Total Corners")
                 for m in corners_markets[:6]:  # Show top 6
-                    st.markdown(f"""
+                    render_markdown(f"""
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--background-card); border-radius: 8px; margin-bottom: 0.5rem;">
                         <div>
                             <span style="color: var(--text-primary); font-weight: 600;">{esc(m.selection)}</span>
@@ -497,9 +501,9 @@ else:
                     """, unsafe_allow_html=True)
 
             if cards_markets:
-                st.markdown("### 🟨 Total Cards")
+                render_markdown("### 🟨 Total Cards")
                 for m in cards_markets[:4]:  # Show top 4
-                    st.markdown(f"""
+                    render_markdown(f"""
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--background-card); border-radius: 8px; margin-bottom: 0.5rem;">
                         <div>
                             <span style="color: var(--text-primary); font-weight: 600;">{esc(m.selection)}</span>
@@ -513,8 +517,8 @@ else:
                     """, unsafe_allow_html=True)
 
 # Analytics Dashboard Section
-st.markdown("---")
-st.markdown("""
+render_markdown("---")
+render_markdown("""
 <div style="margin: 2rem 0 1rem 0;">
     <h2 style="margin: 0;">📊 Analytics Dashboard</h2>
     <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">Visual insights and trend analysis</p>
@@ -545,7 +549,7 @@ if fixtures:
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown("""
+            render_markdown("""
             <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid var(--border-color);">
                 <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">Probability Distribution</h4>
             </div>
@@ -568,7 +572,7 @@ if fixtures:
             st.plotly_chart(fig_prob, use_container_width=True, theme="streamlit")
 
         with col2:
-            st.markdown("""
+            render_markdown("""
             <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid var(--border-color);">
                 <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">Market Types Analysis</h4>
             </div>
@@ -589,7 +593,7 @@ if fixtures:
             st.plotly_chart(fig_market, use_container_width=True, theme="streamlit")
 
         # Top Predictions Table with Visual Indicators
-        st.markdown("""
+        render_markdown("""
         <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border: 1px solid var(--border-color);">
             <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">🏆 Top High-Confidence Predictions</h4>
         </div>
@@ -600,7 +604,7 @@ if fixtures:
         for _, row in top_predictions.iterrows():
             confidence_color = "#3D8B5F" if row["Probability"] >= 0.75 else "#C17F2E" if row["Probability"] >= 0.65 else "#C1503D"
 
-            st.markdown(f"""
+            render_markdown(f"""
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--background-card-alt); border-radius: 8px; margin-bottom: 0.5rem; border-left: 4px solid {confidence_color};">
                 <div>
                     <div style="color: var(--text-primary); font-weight: 600;">{esc(row['Match'])}</div>
@@ -614,7 +618,7 @@ if fixtures:
             """, unsafe_allow_html=True)
 
         # Probability vs Odds Scatter Plot
-        st.markdown("""
+        render_markdown("""
         <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border: 1px solid var(--border-color);">
             <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">📈 Probability vs Fair Odds Analysis</h4>
         </div>
@@ -643,8 +647,8 @@ else:
     st.info("📊 No fixture data available for analytics. Generate predictions first to see visualizations.")
 
 # Architecture section with modern styling
-st.markdown("---")
-st.markdown("""
+render_markdown("---")
+render_markdown("""
 <div style="background: var(--background-card); border-radius: 12px; padding: 2rem; margin: 2rem 0; border: 1px solid var(--border-color);">
     <h3 style="margin: 0 0 1rem 0;">🏗️ System Architecture</h3>
     <div style="color: var(--text-secondary); line-height: 1.8; font-family: monospace;">
@@ -665,8 +669,8 @@ store = Store(settings.db_path)
 auth_config = AuthConfig(jwt_secret=settings.auth_jwt_secret, jwt_expiry_hours=settings.auth_jwt_expiry_hours)
 bootstrap_admin(store, settings.admin_bootstrap_email, settings.admin_bootstrap_password)
 
-st.markdown("---")
-st.markdown("""
+render_markdown("---")
+render_markdown("""
 <div style="margin: 2rem 0 1rem 0;">
     <h2 style="margin: 0;">🔒 VVIP Tips Board</h2>
     <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">Exclusive predictions and expert tips</p>
@@ -675,7 +679,7 @@ st.markdown("""
 
 # Modern authentication sidebar
 with st.sidebar:
-    st.markdown('<div class="settings-group-label" style="margin-top: 0;">Account</div>', unsafe_allow_html=True)
+    render_markdown('<div class="settings-group-label" style="margin-top: 0;">Account</div>', unsafe_allow_html=True)
 
     if "user_id" not in st.session_state:
         st.session_state.user_id = None
@@ -690,7 +694,7 @@ with st.sidebar:
             st.rerun()
         roles = store.roles_for(st.session_state.user_id)
 
-        st.markdown(f"""
+        render_markdown(f"""
         <div style="background: var(--background-card); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--border-color);">
             <div style="color: var(--text-primary); font-weight: 600; margin-bottom: 0.5rem;">{esc(profile['email'])}</div>
             <div style="color: var(--text-secondary); font-size: 0.85rem;">{esc(', '.join(roles) or 'member')}</div>
@@ -743,7 +747,7 @@ _settled = store.settled_tips_since(_since)
 _won = sum(1 for t in _settled if t["status"] == "won")
 _lost = sum(1 for t in _settled if t["status"] == "lost")
 
-st.markdown(f"""
+render_markdown(f"""
 <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border-color);">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
@@ -761,21 +765,21 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if not tips:
-    st.markdown("""
+    render_markdown("""
     <div style="text-align: center; padding: 2rem; background: var(--background-card); border-radius: 12px; border: 1px dashed var(--border-color);">
         <div style="font-size: 2rem; margin-bottom: 0.5rem;">📭</div>
         <p style="color: var(--text-secondary);">No tips posted yet. Check back soon!</p>
     </div>
     """, unsafe_allow_html=True)
 else:
-    st.markdown('<div class="tips-grid">', unsafe_allow_html=True)
+    render_markdown('<div class="tips-grid">', unsafe_allow_html=True)
 
     for t in tips:
         status_emoji = {"won": "✅", "lost": "❌", "void": "➖", "pending": "⏳"}.get(t["status"], "")
         status_color = {"won": "var(--success-color)", "lost": "var(--danger-color)", "void": "var(--text-secondary)", "pending": "var(--warning-color)"}.get(t["status"], "var(--text-secondary)")
 
         if t.get("locked"):
-            st.markdown(f"""
+            render_markdown(f"""
             <div class="prediction-card" style="border-left: 4px solid var(--warning-color);">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
                     <div>
@@ -788,7 +792,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
         else:
-            st.markdown(f"""
+            render_markdown(f"""
             <div class="prediction-card" style="border-left: 4px solid {status_color};">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
                     <div>
@@ -807,12 +811,12 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    render_markdown('</div>', unsafe_allow_html=True)
 
 # Admin board
 if is_admin:
-    st.markdown("---")
-    st.markdown("""
+    render_markdown("---")
+    render_markdown("""
     <div style="margin: 2rem 0 1rem 0;">
         <h2 style="margin: 0;">🛠️ Admin Board</h2>
         <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">Manage tips and member access</p>
@@ -822,7 +826,7 @@ if is_admin:
     # Post new tip form
     with st.expander("📝 Post New Tip", expanded=False):
         with st.form("new_tip_form"):
-            st.markdown("### Create a new prediction tip")
+            render_markdown("### Create a new prediction tip")
 
             c1, c2 = st.columns(2)
             match = c1.text_input("Match", placeholder="e.g., Arsenal vs Chelsea")
@@ -851,7 +855,7 @@ if is_admin:
                     st.error(f"❌ Failed to post tip: {str(exc)}")
 
     # Manage existing tips
-    st.markdown("### 📋 Manage Existing Tips")
+    render_markdown("### 📋 Manage Existing Tips")
 
     for t in store.list_tips():
         with st.expander(f"{t['match']} — {t['market']} / {t['selection']} ({t['tier']}, {t['status']})"):
@@ -878,7 +882,7 @@ if is_admin:
                 st.rerun()
 
     # Member management
-    st.markdown("### 👥 Member Management")
+    render_markdown("### 👥 Member Management")
 
     for m in store.list_members():
         with st.expander(f"{m['email']} — {', '.join(m['roles']) or 'member'}"):
@@ -901,14 +905,14 @@ if is_admin:
                 st.rerun()
 
 elif current_user_id:
-    st.markdown("""
+    render_markdown("""
     <div style="text-align: center; padding: 2rem; background: var(--background-card); border-radius: 12px; border: 1px dashed var(--border-color);">
         <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔒</div>
         <p style="color: var(--text-secondary);">You're signed in as a member. Ask an admin to grant VVIP access to unlock premium tips.</p>
     </div>
     """, unsafe_allow_html=True)
 else:
-    st.markdown("""
+    render_markdown("""
     <div style="text-align: center; padding: 2rem; background: var(--background-card); border-radius: 12px; border: 1px dashed var(--border-color);">
         <div style="font-size: 2rem; margin-bottom: 0.5rem;">👤</div>
         <p style="color: var(--text-secondary);">Sign in from the sidebar to unlock VVIP tips you have access to.</p>
