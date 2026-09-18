@@ -29,6 +29,27 @@ from app.auth import AuthConfig, hash_password, verify_password
 from app.admin_board import bootstrap_admin, serialize_tip
 
 
+def _streamlit_secret(name: str, fallback: str = "") -> str:
+    """Read a Streamlit Cloud secret at runtime, falling back to Settings/env.
+
+    Streamlit secrets are exposed through st.secrets and are not guaranteed to
+    appear in os.environ, so pydantic-settings alone cannot reliably read them
+    on Streamlit Community Cloud.
+    """
+    try:
+        value = st.secrets.get(name, fallback)
+    except Exception:
+        value = fallback
+    return str(value or fallback or "").strip()
+
+
+# Streamlit Cloud secrets are the authoritative runtime source for AI config.
+# This intentionally happens before the status panel and GroqExplainer are
+# created, so the UI and actual API client always use the same credentials.
+groq_api_key = _streamlit_secret("GROQ_API_KEY", getattr(settings, "groq_api_key", ""))
+groq_model = _streamlit_secret("GROQ_MODEL", getattr(settings, "groq_model", "openai/gpt-oss-120b"))
+
+
 
 _RAW_MARKDOWN = st.markdown
 
@@ -237,7 +258,7 @@ def fetch_package_fixtures(start, end, required_count, selected_league_ids):
 engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_coles_rho)
 corners_cards_engine = CornersCardsEngine()
 slips = SlipGenerator(engine, settings.min_selection_confidence, settings.rng_salt)
-explainer = GroqExplainer(settings.groq_api_key, settings.groq_model)
+explainer = GroqExplainer(groq_api_key, groq_model)
 
 # Modern Header
 render_markdown("""
@@ -283,7 +304,7 @@ with st.sidebar:
     active_provider_names = getattr(provider, "provider_names", [settings.football_provider])
     provider_ok = bool(active_provider_names)
     provider_status = ", ".join(active_provider_names) if active_provider_names else "Unavailable"
-    groq_ok = bool(settings.groq_api_key)
+    groq_ok = bool(groq_api_key)
     groq_status = "Configured" if groq_ok else "Not configured"
 
     def _status_row(label: str, value: str, ok: bool) -> str:
@@ -482,12 +503,12 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-    if not settings.groq_api_key:
-        st.info("AI analysis is not connected. Add GROQ_API_KEY in Streamlit Cloud → Manage app → Settings → Secrets, then reboot.")
+    if not groq_api_key:
+        st.error("AI analysis is not connected because GROQ_API_KEY is not available to the app runtime. Add the key under Streamlit Cloud → Manage app → Secrets, then Reboot the app.")
     else:
         if st.button("✅ Test AI connection", key="test_groq_connection"):
             try:
-                test_explainer = GroqExplainer(settings.groq_api_key, settings.groq_model)
+                test_explainer = GroqExplainer(groq_api_key, groq_model)
                 result = test_explainer.explain({"home_team": "Test FC", "away_team": "Test United"}, [{"market": "Total Goals", "selection": "Over 2.5", "probability": 0.50}])
                 st.success("AI connection is working.")
                 st.caption(result[:300])
