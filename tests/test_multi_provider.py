@@ -235,6 +235,8 @@ class TestProviderSettingsWiring(unittest.TestCase):
             football_provider = "auto"
             football_api_base_url = ""
             api_football_key = ""
+            api_football_leagues = "39,179,144,203,233,119"
+            api_football_use_standings_form = True
             football_api_key = ""
             provider_cache_ttl_seconds = 60
             sofascore_browser_path = ""
