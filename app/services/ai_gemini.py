@@ -1,0 +1,33 @@
+from __future__ import annotations
+from typing import Any
+
+
+class GeminiExplainer:
+    """Google Gemini Flash explanation layer for football match analysis."""
+
+    def __init__(self, api_key: str, model: str = "gemini-3.8-flash"):
+        self.api_key = (api_key or "").strip()
+        self.model = (model or "gemini-3.8-flash").strip()
+        self.client = None
+        if self.api_key:
+            from google import genai
+            self.client = genai.Client(api_key=self.api_key)
+
+    def explain(self, match: dict[str, Any], shortlist: list[dict[str, Any]]) -> str:
+        if not self.client:
+            return "Gemini is not configured. Statistical probabilities are still available."
+
+        prompt = (
+            "You are the Gemini explanation layer of a football analytics application. "
+            "Use only the supplied match data and model markets. "
+            "Do not claim certainty, guaranteed wins, insider information, or knowledge "
+            "of future events. Explain the strongest markets, key supporting signals, "
+            "and important uncertainty in concise, practical language. "
+            f"Match: {match}\nMarkets: {shortlist}"
+        )
+
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+        )
+        return (response.text or "").strip() or "No Gemini explanation generated."
