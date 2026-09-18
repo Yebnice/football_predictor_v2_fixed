@@ -1278,38 +1278,73 @@ def _first(row: dict[str, Any], *keys: str, default: Any = None) -> Any:
 
 
 def _normalize_livescorefootball_fixture(row: dict[str, Any], league_slug: str) -> Fixture:
-    """Normalize the stable livescoreFootball event shape.
+    """Normalize the verified livescoreFootball scoreboard/fixtures shape.
 
-    The service's current public documentation uses nested `home`/`away`
-    objects with `display_name`/`name`, nested scores, and a nested status
-    object. Keep compatibility with older flat aliases as well.
+    The public serializer currently emits:
+      event.id, event.date, event.status,
+      event.season, event.name/shortName,
+      event.competitions[0].competitors[0..1],
+      competitor.homeAway, competitor.team.displayName/name,
+      competitor.score.
+    Older flat aliases remain supported for defensive compatibility.
     """
-    event_id = str(_first(row, "id", "eventId", "event_id", "matchId", default="")).strip()
+    event_id = str(_first(
+        row, "id", "eventId", "event_id", "matchId", default=""
+    )).strip()
 
-    home = _first(row, "homeTeam", "home_team", "home", default={})
-    away = _first(row, "awayTeam", "away_team", "away", default={})
+    competitors: list[dict[str, Any]] = []
+    competitions = row.get("competitions")
+    if isinstance(competitions, list) and competitions:
+        first_comp = competitions[0]
+        if isinstance(first_comp, dict):
+            raw_competitors = first_comp.get("competitors")
+            if isinstance(raw_competitors, list):
+                competitors = [
+                    item for item in raw_competitors if isinstance(item, dict)
+                ]
 
-    def participant_name(value: Any) -> str:
+    def competitor_for(side: str) -> dict[str, Any]:
+        for competitor in competitors:
+            if str(competitor.get("homeAway", "")).lower() == side:
+                return competitor
+        return {}
+
+    home_comp = competitor_for("home")
+    away_comp = competitor_for("away")
+
+    def team_name(comp: dict[str, Any], flat_keys: tuple[str, ...]) -> str:
+        team = comp.get("team")
+        if isinstance(team, dict):
+            value = _first(
+                team, "displayName", "display_name", "name",
+                "shortDisplayName", "short_display_name", default=""
+            )
+            if value:
+                return str(value).strip()
+        value = _first(comp, "displayName", "display_name", "name", default="")
+        if value:
+            return str(value).strip()
+        value = _first(row, *flat_keys, default="")
         if isinstance(value, dict):
-            return str(_first(
-                value, "display_name", "displayName", "name", "shortName", "teamName", default=""
-            )).strip()
+            value = _first(
+                value, "displayName", "display_name", "name",
+                "shortDisplayName", "short_display_name", default=""
+            )
         return str(value or "").strip()
 
-    home_name = participant_name(home) or str(_first(
-        row, "homeTeamName", "home_team_name", "homeName", default=""
-    )).strip()
-    away_name = participant_name(away) or str(_first(
-        row, "awayTeamName", "away_team_name", "awayName", default=""
-    )).strip()
+    home_name = team_name(
+        home_comp, ("homeTeam", "home_team", "home", "homeTeamName", "homeName")
+    )
+    away_name = team_name(
+        away_comp, ("awayTeam", "away_team", "away", "awayTeamName", "awayName")
+    )
 
-    # Some payloads expose a human-readable event name; use it only when the
-    # explicit participant fields are absent.
+    # Fallback for a compact event name when competitor objects are absent.
     if not home_name or not away_name:
         event_name = str(_first(
-            row, "short_name", "shortName", "name", default=""
+            row, "shortName", "short_name", "name", default=""
         )).strip()
-        for separator in (" at ", " vs ", " v "):
+        for separator in (" vs ", " v ", " at ", " @ "):
             if separator in event_name:
                 left, right = [part.strip() for part in event_name.split(separator, 1)]
                 if not home_name:
@@ -1318,7 +1353,28 @@ def _normalize_livescorefootball_fixture(row: dict[str, Any], league_slug: str) 
                     away_name = right
                 break
 
-    date_raw = _first(row, "date", "kickoff", "startTime", "start_time", "utcDate")
+    def score_value(comp: dict[str, Any], flat_keys: tuple[str, ...]) -> Any:
+        value = comp.get("score") if isinstance(comp, dict) else None
+        if isinstance(value, dict):
+            value = _first(value, "value", "current", "score", "displayValue", default=None)
+        if value not in (None, ""):
+            return value
+        return _first(row, *flat_keys, default=None)
+
+    def to_int(value: Any) -> int | None:
+        try:
+            if value in (None, ""):
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    home_score = to_int(score_value(home_comp, ("homeScore", "home_score")))
+    away_score = to_int(score_value(away_comp, ("awayScore", "away_score")))
+
+    date_raw = _first(
+        row, "date", "kickoff", "startTime", "start_time", "utcDate"
+    )
     try:
         date = (
             datetime.fromisoformat(str(date_raw).replace("Z", "+00:00"))
@@ -1332,47 +1388,27 @@ def _normalize_livescorefootball_fixture(row: dict[str, Any], league_slug: str) 
     raw_status = _first(row, "status", "state", default="scheduled")
     if isinstance(raw_status, dict):
         status = str(_first(
-            raw_status, "state", "name", "description", "short_detail", default="scheduled"
+            raw_status, "state", "name", "description",
+            "shortDetail", "short_detail", default="scheduled"
         ))
     else:
         status = str(raw_status or "scheduled")
 
-    def score_for(participant: Any, flat_keys: tuple[str, ...]) -> Any:
-        if isinstance(participant, dict):
-            value = _first(
-                participant, "score", "currentScore", "current_score", default=None
-            )
-            if isinstance(value, dict):
-                value = _first(value, "current", "value", "score", default=None)
-            if value not in (None, ""):
-                return value
-        return _first(row, *flat_keys, default=None)
-
-    home_score = score_for(home, ("homeScore", "home_score"))
-    away_score = score_for(away, ("awayScore", "away_score"))
-
-    def to_int(value: Any) -> int | None:
-        try:
-            if value in (None, ""):
-                return None
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
+    league_names = {
+        "eng.1": "Premier League",
+        "esp.1": "LaLiga",
+        "esp.2": "LaLiga 2",
+        "eng.2": "EFL Championship",
+    }
     league_name = str(_first(
         row, "league_name", "leagueName", "competitionName", "note", default=""
-    )).strip()
-    if not league_name:
-        league_name = {
-            "eng.1": "Premier League",
-            "esp.1": "LaLiga",
-            "esp.2": "LaLiga 2",
-            "eng.2": "EFL Championship",
-        }.get(league_slug, league_slug)
+    )).strip() or league_names.get(league_slug, league_slug)
 
     season_value = _first(row, "season", default="")
     if isinstance(season_value, dict):
-        season_value = _first(season_value, "year", "name", "slug", default="")
+        season_value = _first(
+            season_value, "year", "name", "displayName", "slug", default=""
+        )
 
     return Fixture(
         fixture_id=f"livescorefootball-{league_slug}-{event_id}",
@@ -1382,15 +1418,15 @@ def _normalize_livescorefootball_fixture(row: dict[str, Any], league_slug: str) 
         home_team=home_name or "Unknown",
         away_team=away_name or "Unknown",
         status=status,
-        home_score=to_int(home_score),
-        away_score=to_int(away_score),
+        home_score=home_score,
+        away_score=away_score,
         stats={
             "source": "livescorefootball",
             "league_slug": league_slug,
             "venue": (
-                (row.get("venue") or {}).get("name")
-                if isinstance(row.get("venue"), dict) else row.get("venue")
-            ),
+                (row.get("venue") or {}).get("displayName")
+                or (row.get("venue") or {}).get("name")
+            ) if isinstance(row.get("venue"), dict) else row.get("venue"),
         },
     )
 
