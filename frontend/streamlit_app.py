@@ -57,8 +57,33 @@ def _streamlit_secret(name: str, fallback: str = "") -> str:
 # Streamlit Cloud secrets are the authoritative runtime source for AI config.
 # This intentionally happens before the status panel and GroqExplainer are
 # created, so the UI and actual API client always use the same credentials.
+# Runtime secrets: Streamlit Cloud is the source of truth for deployed
+# credentials. This keeps the setup simple: add the keys once in Manage app →
+# Settings → Secrets, reboot, and the same credentials are used by both the
+# data providers and Groq.
+api_football_key = _streamlit_secret(
+    "API_FOOTBALL_KEY",
+    getattr(settings, "api_football_key", "") or getattr(settings, "football_api_key", ""),
+)
+football_data_key = _streamlit_secret(
+    "FOOTBALL_DATA_API_KEY",
+    getattr(settings, "football_data_api_key", ""),
+)
 groq_api_key = _streamlit_secret("GROQ_API_KEY", getattr(settings, "groq_api_key", ""))
 groq_model = _streamlit_secret("GROQ_MODEL", getattr(settings, "groq_model", "openai/gpt-oss-120b"))
+
+# Pydantic settings are initialized before Streamlit secrets are available to
+# this deployment path. Mirror the runtime secrets into the shared settings
+# object before the cached provider is built.
+if api_football_key:
+    settings.api_football_key = api_football_key
+    settings.football_api_key = api_football_key
+if football_data_key:
+    settings.football_data_api_key = football_data_key
+if groq_api_key:
+    settings.groq_api_key = groq_api_key
+if groq_model:
+    settings.groq_model = groq_model
 
 
 
@@ -315,8 +340,10 @@ with st.sidebar:
     active_provider_names = getattr(provider, "provider_names", [settings.football_provider])
     provider_ok = bool(active_provider_names)
     provider_status = ", ".join(active_provider_names) if active_provider_names else "Unavailable"
+    data_ok = bool(api_football_key)
+    data_status = "API-Football connected" if data_ok else "API-Football key missing"
     groq_ok = bool(groq_api_key)
-    groq_status = "Configured" if groq_ok else "Not configured"
+    groq_status = "Connected" if groq_ok else "Key missing"
 
     def _status_row(label: str, value: str, ok: bool) -> str:
         dot_color = "var(--success-color)" if ok else "var(--text-secondary)"
@@ -332,6 +359,7 @@ with st.sidebar:
     render_markdown(f"""
     <div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.5rem 0.85rem;">
         {_status_row("Data provider", f"{settings.football_provider} · {provider_status}", provider_ok)}
+        {_status_row("API-Football", data_status, data_ok)}
         {_status_row("AI analysis", groq_status, groq_ok)}
     </div>
     """, unsafe_allow_html=True)
