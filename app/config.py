@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # `auto` uses the configured provider chain and gracefully skips providers
     # whose credentials are absent. No synthetic data provider is included.
     football_provider: str = "auto"
-    football_provider_chain: str = "allsportsapi,football-data,api-football,thesportsdb,livescorefootball,sofascore"
+    football_provider_chain: str = "isportsapi,allsportsapi,football-data,api-football,thesportsdb,livescorefootball,sofascore"
     football_provider_mode: str = "fallback"
     football_api_base_url: str = ""
     football_api_key: str = ""
@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
     allsportsapi_api_key: str = ""
     allsportsapi_base_url: str = "https://apiv2.allsportsapi.com/football/"
+    isports_api_key: str = ""
+    isports_base_url: str = "https://api.isportsapi.com"
     appwrite_endpoint: str = ""
     appwrite_project_id: str = ""
     appwrite_database_id: str = ""
