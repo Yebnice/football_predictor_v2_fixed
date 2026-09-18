@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     provider_cache_ttl_seconds: float = 60.0
     sofascore_browser_path: str = ""
     livescorefootball_league: str = "eng.1"
+    # Comma-separated free livescoreFootball leagues used when no explicit league is requested.
+    livescorefootball_leagues: str = "eng.1,esp.1,eng.2"
     # Name of the API-Football bookmaker to prefer for 1X2 odds (case-insensitive,
     # e.g. "Bet365"). Empty = use whichever bookmaker has a usable price first.
     odds_preferred_bookmaker: str = ""
