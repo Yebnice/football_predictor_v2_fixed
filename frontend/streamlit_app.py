@@ -24,6 +24,7 @@ from app.engine import FootballProbabilityEngine
 from app.corners_cards import CornersCardsEngine
 from app.slips import SlipGenerator
 from app.services.ai_groq import GroqExplainer
+from app.services.ai_gemini import GeminiExplainer
 from app.store import Store
 from app.auth import AuthConfig, hash_password, verify_password
 from app.admin_board import bootstrap_admin, serialize_tip
@@ -71,6 +72,8 @@ football_data_key = _streamlit_secret(
 )
 groq_api_key = _streamlit_secret("GROQ_API_KEY", getattr(settings, "groq_api_key", ""))
 groq_model = _streamlit_secret("GROQ_MODEL", getattr(settings, "groq_model", "openai/gpt-oss-120b"))
+gemini_api_key = _streamlit_secret("GEMINI_API_KEY", getattr(settings, "gemini_api_key", ""))
+gemini_model = _streamlit_secret("GEMINI_MODEL", getattr(settings, "gemini_model", "gemini-3.8-flash"))
 
 # Pydantic settings are initialized before Streamlit secrets are available to
 # this deployment path. Mirror the runtime secrets into the shared settings
@@ -84,6 +87,10 @@ if groq_api_key:
     settings.groq_api_key = groq_api_key
 if groq_model:
     settings.groq_model = groq_model
+if gemini_api_key:
+    settings.gemini_api_key = gemini_api_key
+if gemini_model:
+    settings.gemini_model = gemini_model
 
 
 
@@ -295,6 +302,7 @@ engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_
 corners_cards_engine = CornersCardsEngine()
 slips = SlipGenerator(engine, settings.min_selection_confidence, settings.rng_salt)
 explainer = GroqExplainer(groq_api_key, groq_model)
+gemini_explainer = GeminiExplainer(gemini_api_key, gemini_model)
 
 # Modern Header
 render_markdown("""
@@ -349,6 +357,8 @@ with st.sidebar:
     data_status = "API-Football connected" if data_ok else "API-Football key missing"
     groq_ok = bool(groq_api_key)
     groq_status = "Connected" if groq_ok else "Key missing"
+    gemini_ok = bool(gemini_api_key)
+    gemini_status = "Connected" if gemini_ok else "Key missing"
 
     def _status_row(label: str, value: str, ok: bool) -> str:
         dot_color = "var(--success-color)" if ok else "var(--text-secondary)"
@@ -365,7 +375,8 @@ with st.sidebar:
     <div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.5rem 0.85rem;">
         {_status_row("Data provider", f"{settings.football_provider} · {provider_status}", provider_ok)}
         {_status_row("API-Football", data_status, data_ok)}
-        {_status_row("AI analysis", groq_status, groq_ok)}
+        {_status_row("Groq AI", groq_status, groq_ok)}
+        {_status_row("Gemini Flash", gemini_status, gemini_ok)}
     </div>
     """, unsafe_allow_html=True)
 
@@ -543,21 +554,51 @@ else:
     render_markdown("""
     <div style="margin: 2rem 0 1rem 0;">
         <h2 style="margin: 0;">🤖 AI Match Analysis</h2>
-        <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">Get detailed AI-powered explanations for any match</p>
+        <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">
+            Choose Gemini Flash, Groq, or both for the explanation layer. The statistical model remains the source of the probabilities.
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-    if not groq_api_key:
-        st.error("AI analysis is not connected because GROQ_API_KEY is not available to the app runtime. Add the key under Streamlit Cloud → Manage app → Secrets, then Reboot the app.")
-    else:
-        if st.button("✅ Test AI connection", key="test_groq_connection"):
-            try:
-                test_explainer = GroqExplainer(groq_api_key, groq_model)
-                result = test_explainer.explain({"home_team": "Test FC", "away_team": "Test United"}, [{"market": "Total Goals", "selection": "Over 2.5", "probability": 0.50}])
-                st.success("AI connection is working.")
-                st.caption(result[:300])
-            except Exception as exc:
-                st.error(f"AI connection failed: {exc}")
+    ai_engine = st.selectbox(
+        "AI analysis engine",
+        ["Gemini Flash", "Groq", "Both"],
+        index=0,
+        key="ai_analysis_engine",
+        help="Gemini Flash uses Google's current stable Flash model. Both runs the two explainers independently so you can compare their explanations."
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if gemini_ok:
+            if st.button("✅ Test Gemini Flash", key="test_gemini_connection", use_container_width=True):
+                try:
+                    result = gemini_explainer.explain(
+                        {"home_team": "Test FC", "away_team": "Test United"},
+                        [{"market": "Total Goals", "selection": "Over 2.5", "probability": 0.50}],
+                    )
+                    st.success("Gemini Flash connection is working.")
+                    st.caption(result[:300])
+                except Exception as exc:
+                    st.error(f"Gemini connection failed: {exc}")
+        else:
+            st.caption("Gemini: add GEMINI_API_KEY in Streamlit Cloud Secrets.")
+
+    with c2:
+        if groq_ok:
+            if st.button("✅ Test Groq", key="test_groq_connection", use_container_width=True):
+                try:
+                    result = explainer.explain(
+                        {"home_team": "Test FC", "away_team": "Test United"},
+                        [{"market": "Total Goals", "selection": "Over 2.5", "probability": 0.50}],
+                    )
+                    st.success("Groq connection is working.")
+                    st.caption(result[:300])
+                except Exception as exc:
+                    st.error(f"Groq connection failed: {exc}")
+        else:
+            st.caption("Groq: add GROQ_API_KEY in Streamlit Cloud Secrets.")
+
     fixture_options = [f"{fx.home_team} vs {fx.away_team} ({fx.fixture_id})" for fx in fixtures]
     selected_match = st.selectbox("Select match to analyze", fixture_options, key="match_explanation")
 
@@ -572,19 +613,29 @@ else:
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 if st.button("🔍 Generate AI Analysis", key=f"explain_{fixture_id}", use_container_width=True):
-                    with st.spinner("Analyzing match data..."):
-                        try:
-                            text = explainer.explain(detailed_fx.__dict__, [m.__dict__ for m in ms])
-                            render_markdown(f"""
-                            <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border-left: 4px solid var(--accent-color);">
-                                <h4 style="margin: 0 0 1rem 0;">📝 Analysis Results</h4>
-                                <div style="color: var(--text-primary); line-height: 1.6;">
-                                    {esc(text).replace(chr(10), '<br>')}
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        except Exception as exc:
-                            st.error(f"❌ Analysis failed: {str(exc)}")
+                    if (ai_engine == "Gemini Flash" and not gemini_ok) or (ai_engine == "Groq" and not groq_ok) or (ai_engine == "Both" and not (gemini_ok or groq_ok)):
+                        st.error("The selected AI engine is not configured. Add the corresponding API key in Streamlit Cloud → Manage app → Settings → Secrets.")
+                    else:
+                        with st.spinner("Analyzing match data..."):
+                            ai_results = []
+                            market_payload = [m.__dict__ for m in ms]
+                            try:
+                                if ai_engine in {"Gemini Flash", "Both"} and gemini_ok:
+                                    ai_results.append(("Gemini Flash", gemini_explainer.explain(detailed_fx.__dict__, market_payload)))
+                                if ai_engine in {"Groq", "Both"} and groq_ok:
+                                    ai_results.append(("Groq", explainer.explain(detailed_fx.__dict__, market_payload)))
+
+                                for provider_label, analysis_text in ai_results:
+                                    render_markdown(f"""
+                                    <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border-left: 4px solid var(--accent-color);">
+                                        <h4 style="margin: 0 0 1rem 0;">📝 {esc(provider_label)} Analysis</h4>
+                                        <div style="color: var(--text-primary); line-height: 1.6;">
+                                            {esc(analysis_text).replace(chr(10), '<br>')}
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                            except Exception as exc:
+                                st.error(f"❌ AI analysis failed: {str(exc)}")
 
     # Corners & cards section
     render_markdown("---")
