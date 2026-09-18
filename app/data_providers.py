@@ -67,6 +67,137 @@ class _TTLCache:
             self._store[key] = (time.monotonic() + self.ttl, value)
 
 
+class AllSportsAPIProvider(FootballProvider):
+    """Adapter for AllSportsAPI Football API V2.
+
+    Uses the documented REST endpoints for Fixtures and Livescore. The
+    WebSocket feed documented at wss://wss.allsportsapi.com/live_events is
+    intentionally left to a backend streaming layer; Streamlit uses the REST
+    endpoint for stable request/response rendering.
+    """
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://apiv2.allsportsapi.com/football/",
+        timeout: float = 25.0,
+        cache_ttl_seconds: float = 30.0,
+    ):
+        if not api_key:
+            raise ValueError("ALLSPORTSAPI_API_KEY is required when AllSportsAPI is enabled")
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/") + "/"
+        self.client = httpx.Client(timeout=timeout, headers={"Accept": "application/json"})
+        self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
+
+    def _get(self, met: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        query = {"met": met, "APIkey": self.api_key, **(params or {})}
+        key = f"{self.base_url}?{sorted(query.items())}"
+        if self._cache is not None:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
+        response = self.client.get(self.base_url, params=query)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("AllSportsAPI returned an unexpected JSON payload")
+        if str(payload.get("success")) in {"0", "false", "False"}:
+            raise RuntimeError(f"AllSportsAPI request failed: {payload.get('error') or payload}")
+        if self._cache is not None:
+            self._cache.set(key, payload)
+        return payload
+
+    @staticmethod
+    def _parse_dt(date_value: Any, time_value: Any = None) -> datetime:
+        raw_date = str(date_value or "").strip()
+        raw_time = str(time_value or "00:00").strip()
+        if not raw_date:
+            return datetime.now(timezone.utc)
+        try:
+            dt = datetime.fromisoformat(f"{raw_date}T{raw_time}")
+        except ValueError:
+            try:
+                dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+            except ValueError:
+                return datetime.now(timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    def _normalise(row: dict[str, Any]) -> Fixture:
+        status_raw = str(row.get("event_status") or "").strip().lower()
+        status = "in_play" if row.get("event_live") in {"1", 1, True, "true", "True"} else (
+            "finished" if status_raw in {"finished", "ft"} else "scheduled"
+        )
+
+        def score_value(value: Any) -> int | None:
+            try:
+                return int(value) if value not in (None, "", "-") else None
+            except (TypeError, ValueError):
+                return None
+
+        final_result = str(row.get("event_final_result") or row.get("event_ft_result") or "").strip()
+        score_parts = final_result.split("-", 1) if "-" in final_result else []
+
+        return Fixture(
+            fixture_id=f"allsports-{row.get('event_key') or row.get('match_id')}",
+            date=AllSportsAPIProvider._parse_dt(row.get("event_date"), row.get("event_time")),
+            league=str(row.get("league_name") or "Unknown"),
+            season=str(row.get("league_season") or "Unknown"),
+            home_team=str(row.get("event_home_team") or "Unknown").strip(),
+            away_team=str(row.get("event_away_team") or "Unknown").strip(),
+            status=status,
+            home_score=score_value(score_parts[0].strip()) if len(score_parts) == 2 else None,
+            away_score=score_value(score_parts[1].strip()) if len(score_parts) == 2 else None,
+            stats={
+                "source": "allsportsapi",
+                "home_team_id": row.get("home_team_key"),
+                "away_team_id": row.get("away_team_key"),
+                "country": row.get("country_name"),
+                "country_id": row.get("event_country_key"),
+                "league_id": row.get("league_key"),
+                "round": row.get("league_round"),
+                "venue": row.get("event_stadium"),
+                "referee": row.get("event_referee"),
+                "stage": row.get("stage_name"),
+                "event_live": row.get("event_live"),
+            },
+        )
+
+    def fixtures(
+        self,
+        start: datetime,
+        end: datetime,
+        live: bool = False,
+        league: int | str | None = None,
+        season: int | str | None = None,
+    ) -> list[Fixture]:
+        if live:
+            payload = self._get("Livescore", {"timezone": "UTC"})
+        else:
+            payload = self._get("Fixtures", {
+                "from": start.date().isoformat(),
+                "to": end.date().isoformat(),
+                "timezone": "UTC",
+            })
+        rows = payload.get("result") or []
+        if isinstance(rows, dict):
+            rows = [value for value in rows.values() if isinstance(value, dict)]
+        fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
+        return [fx for fx in fixtures if start <= fx.date <= end]
+
+    def fixture_by_id(self, fixture_id: str) -> Fixture | None:
+        event_id = fixture_id.removeprefix("allsports-")
+        payload = self._get("Fixtures", {"matchId": event_id, "timezone": "UTC"})
+        rows = payload.get("result") or []
+        if isinstance(rows, dict):
+            rows = [value for value in rows.values() if isinstance(value, dict)]
+        return self._normalise(rows[0]) if rows and isinstance(rows[0], dict) else None
+
+    def odds(self, fixture_id: str) -> dict[str, Any]:
+        event_id = fixture_id.removeprefix("allsports-")
+        payload = self._get("Odds", {"matchId": event_id, "timezone": "UTC"})
+        return payload.get("result") or {}
+
 class TheSportsDBProvider(FootballProvider):
     """Free TheSportsDB V1 adapter.
 
