@@ -921,6 +921,8 @@ def _normalize_api_football_fixture(row: dict[str, Any]) -> Fixture:
         away_score=goals.get("away"),
         stats={
             "source": "api-football",
+            "home_team_id": (teams.get("home") or {}).get("id"),
+            "away_team_id": (teams.get("away") or {}).get("id"),
             "venue": ((fx.get("venue") or {}).get("name")),
             "timezone": fx.get("timezone"),
             "periods": score.get("periods", {}),
