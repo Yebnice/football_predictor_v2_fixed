@@ -1331,6 +1331,8 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         thesportsdb_league_id=settings.thesportsdb_league_id,
         allsportsapi_api_key=getattr(settings, "allsportsapi_api_key", ""),
         allsportsapi_base_url=getattr(settings, "allsportsapi_base_url", "https://apiv2.allsportsapi.com/football/"),
+        isports_api_key=getattr(settings, "isports_api_key", ""),
+        isports_base_url=getattr(settings, "isports_base_url", "https://api.isportsapi.com"),
         provider_chain=settings.football_provider_chain,
         provider_mode=settings.football_provider_mode,
     )
@@ -1353,6 +1355,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     thesportsdb_league_id: str = "4328",
                     allsportsapi_api_key: str = "",
                     allsportsapi_base_url: str = "https://apiv2.allsportsapi.com/football/",
+                    isports_api_key: str = "",
+                    isports_base_url: str = "https://api.isportsapi.com",
                     provider_chain: str = "",
                     provider_mode: str = "fallback") -> FootballProvider:
     """Build either one provider or a configurable provider chain.
@@ -1364,7 +1368,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
     normalized = (name or "auto").lower().strip()
     chain_spec = provider_chain.strip() if provider_chain else (name if "," in name else "")
     if normalized in {"auto", "multi", "composite", "fallback"}:
-        chain_spec = provider_chain.strip() or "allsportsapi,football-data,api-football,thesportsdb,livescorefootball,sofascore"
+        chain_spec = provider_chain.strip() or "isportsapi,allsportsapi,football-data,api-football,thesportsdb,livescorefootball,sofascore"
     if chain_spec:
         from .multi_provider import CompositeFootballProvider
         providers: list[tuple[str, FootballProvider]] = []
@@ -1389,6 +1393,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     thesportsdb_league_id=thesportsdb_league_id,
                     allsportsapi_api_key=allsportsapi_api_key,
                     allsportsapi_base_url=allsportsapi_base_url,
+                    isports_api_key=isports_api_key,
+                    isports_base_url=isports_base_url,
                 )
             except ValueError as exc:
                 # Missing optional credentials should not make the entire chain
@@ -1398,6 +1404,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                 if key in {"football-data", "football-data-org"} and not football_data_api_key:
                     continue
                 if key in {"allsportsapi", "all-sports-api", "allsports"} and not allsportsapi_api_key:
+                    continue
+                if key in {"isportsapi", "isports"} and not isports_api_key:
                     continue
                 logger.warning("Skipping unavailable provider %s: %s", item, exc)
                 continue
@@ -1433,6 +1441,12 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
             api_key=allsportsapi_api_key,
             base_url=allsportsapi_base_url or "https://apiv2.allsportsapi.com/football/",
             cache_ttl_seconds=cache_ttl_seconds,
+        )
+    if normalized in {"isportsapi", "isports"}:
+        return ISportsAPIProvider(
+            api_key=isports_api_key,
+            base_url=isports_base_url or "https://api.isportsapi.com",
+            cache_ttl_seconds=min(cache_ttl_seconds, 10.0),
         )
     if normalized in {"thesportsdb", "the-sports-db", "thesportsdb-v1"}:
         return TheSportsDBProvider(api_key=thesportsdb_api_key or "123",
