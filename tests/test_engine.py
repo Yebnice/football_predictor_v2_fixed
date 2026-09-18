@@ -20,6 +20,18 @@ class EngineTests(unittest.TestCase):
         names={(x.market,x.selection) for x in ms}
         for required in [("1X2","Home Win"),("1X2","Draw"),("1X2","Away Win"),("BTTS","Yes"),("Total Goals","Over 1.5"),("Correct Score","1-0")]:
             self.assertIn(required,names)
+    def test_team_form_changes_expected_goals(self):
+        e = FootballProbabilityEngine(8)
+        neutral = self.fixture()
+        strong = self.fixture()
+        strong.home_form = TeamForm(matches=5, wins=5, draws=0, losses=0, goals_for=10, goals_against=2)
+        weak = self.fixture()
+        weak.home_form = TeamForm(matches=5, wins=0, draws=1, losses=4, goals_for=2, goals_against=10)
+        strong_h, _ = e.expected_goals(strong)
+        weak_h, _ = e.expected_goals(weak)
+        neutral_h, _ = e.expected_goals(neutral)
+        self.assertGreater(strong_h, neutral_h)
+        self.assertLess(weak_h, neutral_h)
     def test_probabilities_bounded(self):
         e=FootballProbabilityEngine(8)
         for m in e.markets(self.fixture()):
