@@ -26,8 +26,13 @@ class GeminiExplainer:
             f"Match: {match}\nMarkets: {shortlist}"
         )
 
+        from google.genai import types
+
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
+            config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(thinking_level="medium")
+            ),
         )
         return (response.text or "").strip() or "No Gemini explanation generated."
