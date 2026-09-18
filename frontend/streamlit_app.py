@@ -34,7 +34,8 @@ _RAW_MARKDOWN = st.markdown
 
 def render_markdown(body, **kwargs):
     """Render Markdown/HTML blocks without treating Python indentation as a code block."""
-    cleaned = "\n".join(line.lstrip() for line in str(body).splitlines())\n    return _RAW_MARKDOWN(cleaned.strip("\n"), **kwargs)
+    cleaned = "\n".join(line.lstrip() for line in str(body).splitlines())
+    return _RAW_MARKDOWN(cleaned.strip("\n"), **kwargs)
 
 def esc(value) -> str:
     """Escape a value before interpolating it into an unsafe_allow_html
