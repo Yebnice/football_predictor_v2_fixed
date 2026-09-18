@@ -1191,6 +1191,8 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         thesportsdb_api_key=settings.thesportsdb_api_key,
         thesportsdb_base_url=settings.thesportsdb_base_url,
         thesportsdb_league_id=settings.thesportsdb_league_id,
+        allsportsapi_api_key=getattr(settings, "allsportsapi_key", ""),
+        allsportsapi_base_url=getattr(settings, "allsportsapi_base_url", "https://apiv2.allsportsapi.com/football/"),
         provider_chain=settings.football_provider_chain,
         provider_mode=settings.football_provider_mode,
     )
@@ -1245,6 +1247,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     thesportsdb_api_key=thesportsdb_api_key,
                     thesportsdb_base_url=thesportsdb_base_url,
                     thesportsdb_league_id=thesportsdb_league_id,
+                    allsportsapi_api_key=allsportsapi_api_key,
+                    allsportsapi_base_url=allsportsapi_base_url,
                 )
             except ValueError as exc:
                 # Missing optional credentials should not make the entire chain
@@ -1252,6 +1256,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                 if key in {"api-football", "api-sports", "apisports"} and not api_key:
                     continue
                 if key in {"football-data", "football-data-org"} and not football_data_api_key:
+                    continue
+                if key in {"allsportsapi", "all-sports-api", "allsports"} and not allsportsapi_api_key:
                     continue
                 logger.warning("Skipping unavailable provider %s: %s", item, exc)
                 continue
@@ -1282,6 +1288,12 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                                        default_competition=football_data_competition or "PL",
                                        cache_ttl_seconds=cache_ttl_seconds,
                                        enrich_form=football_data_enrich_form)
+    if normalized in {"allsportsapi", "all-sports-api", "allsports"}:
+        return AllSportsAPIProvider(
+            api_key=allsportsapi_api_key,
+            base_url=allsportsapi_base_url or "https://apiv2.allsportsapi.com/football/",
+            cache_ttl_seconds=cache_ttl_seconds,
+        )
     if normalized in {"thesportsdb", "the-sports-db", "thesportsdb-v1"}:
         return TheSportsDBProvider(api_key=thesportsdb_api_key or "123",
                                    league_id=thesportsdb_league_id or "4328",
