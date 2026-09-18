@@ -18,6 +18,7 @@ from .engine import FootballProbabilityEngine
 from .corners_cards import CornersCardsEngine
 from .slips import SlipGenerator
 from .services.ai_groq import GroqExplainer
+from .services.ai_gemini import GeminiExplainer
 from .services.payments import PaymentService
 from .store import Store
 from .auth import AuthConfig
@@ -86,6 +87,7 @@ engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_
 corners_cards_engine = CornersCardsEngine()
 slipgen = SlipGenerator(engine, settings.min_selection_confidence, settings.rng_salt)
 groq = GroqExplainer(settings.groq_api_key, settings.groq_model)
+gemini = GeminiExplainer(settings.gemini_api_key, settings.gemini_model)
 payments = PaymentService(settings.usdt_network, settings.usdt_receiving_address, settings.mtn_momo_enabled, settings.telecel_enabled)
 
 _db.assert_safe_for_current_host(settings.db_path)
@@ -144,6 +146,7 @@ def health():
     return {"status": "ok", "provider": settings.football_provider, "providers": provider_names,
             "provider_mode": getattr(provider, "mode", settings.football_provider_mode),
             "groq_configured": bool(settings.groq_api_key),
+            "gemini_configured": bool(settings.gemini_api_key),
             "appwrite_sync_configured": appwrite_sync.is_configured()}
 
 @app.get("/providers")
@@ -207,7 +210,12 @@ def match_value_bets(fixture_id: str, min_edge: float = Query(default=0.05, ge=0
     return {"fixture": fx.__dict__, "min_edge": min_edge, "value_bets": [m.__dict__ for m in value]}
 
 @app.get("/match/{fixture_id}/explain")
-def match_explain(fixture_id: str, top_n: int = Query(default=5, ge=1, le=20)):
+def match_explain(
+    fixture_id: str,
+    top_n: int = Query(default=5, ge=1, le=20),
+    ai: str = Query(default="gemini", pattern="^(gemini|groq|both)$"),
+):
+    """Explain a model-backed match using Gemini Flash, Groq, or both."""
     try:
         fx = provider.fixture_by_id(fixture_id)
     except (httpx.HTTPError, RuntimeError) as exc:
@@ -215,12 +223,28 @@ def match_explain(fixture_id: str, top_n: int = Query(default=5, ge=1, le=20)):
     if not fx:
         raise HTTPException(404, "Fixture not found")
     shortlist = engine.shortlist(fx, settings.min_selection_confidence, top_n)
-    try:
-        text = groq.explain(fx.__dict__, [m.__dict__ for m in shortlist])
-    except Exception as exc:
-        logger.warning("Groq explanation failed for %s: %s", fixture_id, exc)
-        raise HTTPException(502, "AI explanation provider error. Check GROQ_API_KEY and GROQ_MODEL.")
-    return {"fixture_id": fixture_id, "explanation": text}
+    market_payload = [m.__dict__ for m in shortlist]
+    results = {}
+
+    if ai in {"gemini", "both"}:
+        if not settings.gemini_api_key:
+            raise HTTPException(503, "Gemini AI is not configured. Set GEMINI_API_KEY.")
+        try:
+            results["gemini"] = gemini.explain(fx.__dict__, market_payload)
+        except Exception as exc:
+            logger.warning("Gemini explanation failed for %s: %s", fixture_id, exc)
+            raise HTTPException(502, "Gemini explanation provider error. Check GEMINI_API_KEY and GEMINI_MODEL.")
+
+    if ai in {"groq", "both"}:
+        if not settings.groq_api_key:
+            raise HTTPException(503, "Groq AI is not configured. Set GROQ_API_KEY.")
+        try:
+            results["groq"] = groq.explain(fx.__dict__, market_payload)
+        except Exception as exc:
+            logger.warning("Groq explanation failed for %s: %s", fixture_id, exc)
+            raise HTTPException(502, "Groq explanation provider error. Check GROQ_API_KEY and GROQ_MODEL.")
+
+    return {"fixture_id": fixture_id, "ai": ai, "explanations": results}
 
 @app.get("/slips/daily")
 def daily_slip():
