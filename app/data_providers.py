@@ -1361,6 +1361,12 @@ def _normalize_livescorefootball_fixture(row: dict[str, Any], league_slug: str) 
             return value
         return _first(row, *flat_keys, default=None)
 
+    def team_form(comp: dict[str, Any]) -> TeamForm:
+        raw = str(comp.get("form") or "").strip().upper()
+        wins = raw.count("W")
+        draws = raw.count("D")
+        losses = raw.count("L")
+        return TeamForm(matches=wins + draws + losses, wins=wins, draws=draws, losses=losses)
     def to_int(value: Any) -> int | None:
         try:
             if value in (None, ""):
@@ -1410,6 +1416,9 @@ def _normalize_livescorefootball_fixture(row: dict[str, Any], league_slug: str) 
             season_value, "year", "name", "displayName", "slug", default=""
         )
 
+    home_form = team_form(home_comp)
+    away_form = team_form(away_comp)
+
     return Fixture(
         fixture_id=f"livescorefootball-{league_slug}-{event_id}",
         date=date,
@@ -1420,6 +1429,8 @@ def _normalize_livescorefootball_fixture(row: dict[str, Any], league_slug: str) 
         status=status,
         home_score=home_score,
         away_score=away_score,
+        home_form=home_form,
+        away_form=away_form,
         stats={
             "source": "livescorefootball",
             "league_slug": league_slug,
