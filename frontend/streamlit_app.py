@@ -26,9 +26,15 @@ from app.store import Store
 from app.auth import AuthConfig, hash_password, verify_password
 from app.admin_board import bootstrap_admin, serialize_tip
 
+
+
+def render_markdown(body, **kwargs):
+    """Render Markdown/HTML blocks without treating Python indentation as a code block."""
+    return st.markdown(textwrap.dedent(body).strip("\n"), **kwargs)
+
 def esc(value) -> str:
     """Escape a value before interpolating it into an unsafe_allow_html
-    st.markdown() block. Provider team/league names, admin-authored tip text,
+    render_markdown() block. Provider team/league names, admin-authored tip text,
     and Groq's generated explanation are all attacker-influenceable strings
     that were previously inserted into raw HTML with no escaping — this closes
     that XSS path without touching the templates' own static markup/CSS."""
