@@ -81,8 +81,9 @@ class LivescoreFootballProviderTests(unittest.TestCase):
             def json(self): return {"fixtures": [ASSUMED_FIXTURE_ROW]}
         mock_get.return_value = R()
         provider = self._provider()
-        now = datetime.now(timezone.utc)
-        fixtures = provider.fixtures(now, now)
+        start = datetime(2026, 9, 20, 0, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc)
+        fixtures = provider.fixtures(start, end)
         self.assertEqual(len(fixtures), 1)
         fx = fixtures[0]
         self.assertEqual(fx.fixture_id, "livescorefootball-eng.1-5001")
@@ -126,8 +127,9 @@ class LivescoreFootballProviderTests(unittest.TestCase):
             def json(self): return {"data": [ASSUMED_FIXTURE_ROW]}
         mock_get.return_value = R()
         provider = self._provider()
-        now = datetime.now(timezone.utc)
-        fixtures = provider.fixtures(now, now)
+        start = datetime(2026, 9, 20, 0, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc)
+        fixtures = provider.fixtures(start, end)
         self.assertEqual(len(fixtures), 1)
 
     @patch("httpx.Client.get")
@@ -137,8 +139,9 @@ class LivescoreFootballProviderTests(unittest.TestCase):
             def json(self): return [ASSUMED_FIXTURE_ROW]
         mock_get.return_value = R()
         provider = self._provider()
-        now = datetime.now(timezone.utc)
-        fixtures = provider.fixtures(now, now)
+        start = datetime(2026, 9, 20, 0, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc)
+        fixtures = provider.fixtures(start, end)
         self.assertEqual(len(fixtures), 1)
 
     @patch("httpx.Client.get")
