@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     api_football_key: str = ""
     api_football_leagues: str = "39,140,78,135"
     api_football_use_standings_form: bool = True
+    api_football_max_active_leagues: int = 4
     football_data_api_key: str = ""
     football_data_base_url: str = "https://api.football-data.org/v4"
     football_data_competition: str = "PL"
