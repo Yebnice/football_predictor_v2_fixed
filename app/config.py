@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     thesportsdb_league_id: str = "4328"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
     appwrite_endpoint: str = ""
     appwrite_project_id: str = ""
     appwrite_database_id: str = ""
