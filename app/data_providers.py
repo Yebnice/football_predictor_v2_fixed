@@ -553,12 +553,16 @@ class ApiFootballProvider(FootballProvider):
     provider-specific JSON out of the prediction engine by normalizing it to our
     internal Fixture schema.
 
-    Free-plan note: API-Football's free tier caps requests at 100/day and, per
-    their own docs, restricts most competitions to a specific (often older,
-    e.g. 2021) season rather than the current one. If a `fixtures()` call for
-    the current season returns an empty list on a free key, pass an explicit
-    `season=` for that competition's free-tier season, or check `/status` to
-    see which seasons your key actually covers.
+    Season handling: API-Football requires `league` + `season` for
+    date-range fixture queries. The app therefore supplies an automatic season
+    when callers omit it, using the football season's starting year (July-
+    December uses the calendar year; January-June uses the previous year).
+    An explicit `season=` still overrides the automatic value.
+
+    Free-plan note: API-Football's free tier caps requests at 100/day and may
+    restrict season coverage. If a valid request returns no fixtures because
+    the requested season is not covered by the key, pass an explicit supported
+    `season=` or check the provider's available seasons.
     """
     def __init__(self, api_key: str, base_url: str = "https://v3.football.api-sports.io",
                  timeout: float = 30.0, cache_ttl_seconds: float = 60.0,
@@ -626,12 +630,22 @@ class ApiFootballProvider(FootballProvider):
         if not selected:
             raise ValueError("API-Football fixture requests require API_FOOTBALL_LEAGUES to be configured")
 
+        # API-Football requires `season` together with `league` for
+        # date-range fixture queries. Keep it explicit even when Streamlit calls
+        # this method without a season argument.
+        resolved_season = season
+        if resolved_season is None:
+            resolved_season = start.year if start.month >= 7 else start.year - 1
+
         all_fixtures: list[Fixture] = []
         seen: set[str] = set()
         for league_id in selected:
-            params = {"from": start.date().isoformat(), "to": end.date().isoformat(), "league": league_id}
-            if season is not None:
-                params["season"] = season
+            params = {
+                "from": start.date().isoformat(),
+                "to": end.date().isoformat(),
+                "league": league_id,
+                "season": resolved_season,
+            }
             try:
                 payload = self._get("/fixtures", params, cacheable=True)
             except RuntimeError as exc:
