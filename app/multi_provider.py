@@ -55,12 +55,22 @@ class CompositeFootballProvider(FootballProvider):
         collected: list[Fixture] = []
         collected_seen: set[tuple[str, str, str, str]] = set()
         minimum = max(0, int(minimum or 0))
+        # The sidebar sends API-Football numeric league IDs. Never let a
+        # fallback provider answer with an unrelated default league when the
+        # selected competition list cannot be represented in that provider's
+        # native ID system. Returning the wrong league is worse than returning
+        # an empty result.
+        api_league_selection = False
+        if isinstance(league, str):
+            tokens = [x.strip() for x in league.split(",") if x.strip()]
+            api_league_selection = bool(tokens) and all(token.isdigit() for token in tokens)
+        elif isinstance(league, int):
+            api_league_selection = True
+
         for name, provider in self.providers:
+            if api_league_selection and name not in {"api-football", "api-sports", "apisports"}:
+                continue
             try:
-                # The sidebar's league selector uses API-Football numeric IDs.
-                # Fallback providers have different league-id namespaces, so do
-                # not pass API-Football IDs into them. They use their configured
-                # native/default competition instead.
                 provider_league = league if name in {"api-football", "api-sports", "apisports"} else None
                 rows = provider.fixtures(start, end, live=live, league=provider_league, season=season)
                 # Do not treat structurally empty fixtures as useful data. A
