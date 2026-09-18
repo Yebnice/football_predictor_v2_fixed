@@ -33,6 +33,22 @@ class TestApiFootballProvider(unittest.TestCase):
         self.assertEqual(rows[0].stats["source"], "api-football")
 
     @patch("app.data_providers.httpx.Client.get")
+    def test_fixtures_auto_includes_starting_year_as_season(self, mock_get):
+        class R:
+            def raise_for_status(self): pass
+            def json(self):
+                return {"errors": {}, "response": []}
+
+        mock_get.return_value = R()
+        p = ApiFootballProvider("key", cache_ttl_seconds=0)
+        start = datetime(2026, 9, 18, tzinfo=timezone.utc)
+        end = datetime(2026, 9, 19, tzinfo=timezone.utc)
+        p.fixtures(start, end, league=39)
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["league"], 39)
+        self.assertEqual(kwargs["params"]["season"], 2026)
+
+    @patch("app.data_providers.httpx.Client.get")
     def test_fixture_details_makes_a_single_request(self, mock_get):
         # Regression test: fixture_details previously issued the same request twice.
         class R:
