@@ -1,4 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from .leagues import DEFAULT_MAJOR_LEAGUE_IDS
 import logging
 
 logger = logging.getLogger("football_predictor.config")
@@ -16,6 +18,8 @@ class Settings(BaseSettings):
     football_api_base_url: str = ""
     football_api_key: str = ""
     api_football_key: str = ""
+    api_football_leagues: str = DEFAULT_MAJOR_LEAGUE_IDS
+    api_football_use_standings_form: bool = True
     football_data_api_key: str = ""
     football_data_base_url: str = "https://api.football-data.org/v4"
     football_data_competition: str = "PL"
