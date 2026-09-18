@@ -932,6 +932,8 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         odds_preferred_bookmaker=settings.odds_preferred_bookmaker,
         api_football_enrich_lists=settings.api_football_enrich_lists,
         api_football_fetch_discipline=settings.api_football_fetch_discipline,
+        api_football_leagues=settings.api_football_leagues,
+        api_football_use_standings_form=settings.api_football_use_standings_form,
         football_data_api_key=settings.football_data_api_key,
         football_data_base_url=settings.football_data_base_url,
         football_data_competition=settings.football_data_competition,
@@ -950,6 +952,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     odds_preferred_bookmaker: str = "",
                     api_football_enrich_lists: bool = False,
                     api_football_fetch_discipline: bool = False,
+                    api_football_leagues: str = "",
+                    api_football_use_standings_form: bool = True,
                     football_data_api_key: str = "",
                     football_data_base_url: str = "",
                     football_data_competition: str = "PL",
@@ -982,6 +986,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     odds_preferred_bookmaker=odds_preferred_bookmaker,
                     api_football_enrich_lists=api_football_enrich_lists,
                     api_football_fetch_discipline=api_football_fetch_discipline,
+                    api_football_leagues=api_football_leagues,
+                    api_football_use_standings_form=api_football_use_standings_form,
                     football_data_api_key=football_data_api_key,
                     football_data_base_url=football_data_base_url,
                     football_data_competition=football_data_competition,
@@ -1017,7 +1023,9 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                                     cache_ttl_seconds=cache_ttl_seconds,
                                     preferred_bookmaker=odds_preferred_bookmaker,
                                     enrich_list_fixtures=api_football_enrich_lists,
-                                    fetch_discipline_stats=api_football_fetch_discipline)
+                                    fetch_discipline_stats=api_football_fetch_discipline,
+                                    default_leagues=api_football_leagues,
+                                    use_standings_form=api_football_use_standings_form)
     if normalized in {"football-data", "football-data-org", "football-data.org"}:
         return FootballDataOrgProvider(api_key=football_data_api_key or api_key,
                                        base_url=football_data_base_url or "https://api.football-data.org/v4",
