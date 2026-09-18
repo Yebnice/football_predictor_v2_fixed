@@ -612,22 +612,90 @@ class ApiFootballProvider(FootballProvider):
     def fixtures(self, start: datetime, end: datetime, live: bool = False,
                  league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
         if live:
-            params: dict[str, Any] = {"live": "all"}
-        else:
-            params = {"from": start.date().isoformat(), "to": end.date().isoformat()}
-        if league is not None:
-            params["league"] = league
-        if season is not None:
-            params["season"] = season
-        payload = self._get("/fixtures", params, cacheable=not live)
-        rows = payload.get("response", [])
-        out = [_normalize_api_football_fixture(row) for row in rows]
-        if not live:
-            out = [fx for fx in out if start <= fx.date <= end]
-        if self.enrich_list_fixtures:
-            self._enrich_fixtures_batch(out, rows)
-        return out
+            selected = [str(league)] if league is not None else list(self.default_leagues)
+            params = {"live": "-".join(selected) if selected else "all"}
+            payload = self._get("/fixtures", params, cacheable=False)
+            rows = payload.get("response", [])
+            out = [_normalize_api_football_fixture(row) for row in rows]
+            return [fx for fx in out if start <= fx.date <= end]
 
+        selected = [str(league)] if league is not None else list(self.default_leagues)
+        if not selected:
+            raise ValueError("API-Football fixture requests require API_FOOTBALL_LEAGUES to be configured")
+
+        all_fixtures: list[Fixture] = []
+        seen: set[str] = set()
+        for league_id in selected:
+            params = {"from": start.date().isoformat(), "to": end.date().isoformat(), "league": league_id}
+            if season is not None:
+                params["season"] = season
+            payload = self._get("/fixtures", params, cacheable=True)
+            rows = payload.get("response", [])
+            fixtures = [_normalize_api_football_fixture(row) for row in rows]
+
+            if self.use_standings_form and fixtures:
+                seasons = {str((row.get("league") or {}).get("season")) for row in rows if (row.get("league") or {}).get("season") is not None}
+                season_text = next(iter(seasons), str(season or ""))
+                standing_forms: dict[int, TeamForm] = {}
+                if season_text.isdigit():
+                    try:
+                        standing_forms = self._standings_forms(league_id, int(season_text))
+                    except (RuntimeError, ValueError, httpx.HTTPError) as exc:
+                        logger.warning("API-Football standings form unavailable for league %s: %s", league_id, exc)
+                row_by_fixture = {str((row.get("fixture") or {}).get("id")): row for row in rows}
+                for fx in fixtures:
+                    if fx.date < datetime.now(timezone.utc):
+                        continue
+                    row = row_by_fixture.get(fx.fixture_id.removeprefix("api-football-"), {})
+                    teams = row.get("teams") or {}
+                    home_id = (teams.get("home") or {}).get("id")
+                    away_id = (teams.get("away") or {}).get("id")
+                    if home_id in standing_forms:
+                        fx.home_form = standing_forms[home_id]
+                    if away_id in standing_forms:
+                        fx.away_form = standing_forms[away_id]
+
+            for fx in fixtures:
+                if not (start <= fx.date <= end):
+                    continue
+                if str(fx.home_team).strip().casefold() in {"", "unknown", "home"}:
+                    continue
+                if str(fx.away_team).strip().casefold() in {"", "unknown", "away"}:
+                    continue
+                if fx.fixture_id in seen:
+                    continue
+                seen.add(fx.fixture_id)
+                all_fixtures.append(fx)
+
+        all_fixtures.sort(key=lambda x: x.date)
+        return all_fixtures
+
+    def _standings_forms(self, league_id: str, season: int) -> dict[int, TeamForm]:
+        payload = self._get("/standings", {"league": league_id, "season": season}, cacheable=True)
+        response = payload.get("response") or []
+        if not response:
+            return {}
+        groups = ((response[0].get("league") or {}).get("standings") or [])
+        entries = [entry for group in groups if isinstance(group, list) for entry in group if isinstance(entry, dict)]
+        out: dict[int, TeamForm] = {}
+        for entry in entries:
+            team_id = (entry.get("team") or {}).get("id")
+            all_stats = entry.get("all") or {}
+            goals = all_stats.get("goals") or {}
+            if not team_id:
+                continue
+            played = int(all_stats.get("played") or 0)
+            if played <= 0:
+                continue
+            out[int(team_id)] = TeamForm(
+                matches=played,
+                wins=int(all_stats.get("win") or 0),
+                draws=int(all_stats.get("draw") or 0),
+                losses=int(all_stats.get("lose") or 0),
+                goals_for=float(goals.get("for") or 0.0),
+                goals_against=float(goals.get("against") or 0.0),
+            )
+        return out
     def _enrich_fixtures_batch(self, fixtures: list[Fixture], rows: list[dict[str, Any]]) -> None:
         """Fill in form (and odds, best-effort) for every fixture in a list response.
 
