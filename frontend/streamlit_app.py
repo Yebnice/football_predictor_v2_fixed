@@ -315,7 +315,8 @@ else:
 
 # Fetch fixtures
 try:
-    fixtures = provider.fixtures(start, end, live=(pkg == "Live"))
+    initial_required = {"Daily": 10, "Weekly": 40, "Monthly": 70}.get(pkg, 0)
+    fixtures = fetch_package_fixtures(start, end, initial_required) if initial_required else provider.fixtures(start, end, live=(pkg == "Live"))
 except Exception as e:
     st.error(f"Failed to fetch fixtures: {str(e)}")
     fixtures = []
