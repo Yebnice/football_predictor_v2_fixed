@@ -18,7 +18,7 @@ from .schemas import Fixture, MarketPrediction
 # score grid can price on its own since draws are a real, non-excludable
 # outcome — Double Chance below is the standard way books handle that).
 TIP_MARKETS = {"1X2", "Draw No Bet", "Double Chance", "BTTS", "Total Goals"}
-TIP_TOTAL_GOALS_LINES = {"Over 2.5", "Under 2.5"}
+TIP_TOTAL_GOALS_LINES = {"Over 1.5", "Under 1.5", "Over 2.5", "Under 2.5", "Over 3.5", "Under 3.5"}
 # Standard line for a single team's own goals market (e.g. "Arsenal Goals",
 # "Chelsea Goals" — labeled by team name in markets(), not literally
 # "Home Goals"/"Away Goals"). 1.5 is the conventional single-team O/U line.
