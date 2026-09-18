@@ -58,8 +58,18 @@ class CompositeFootballProvider(FootballProvider):
         for name, provider in self.providers:
             try:
                 rows = provider.fixtures(start, end, live=live, league=league, season=season)
-                if rows:
-                    successful.append((name, rows))
+                # Do not treat structurally empty fixtures as useful data. A
+                # provider can return rows with missing participants when its
+                # upstream schema changes; those rows must not block a later
+                # provider in the fallback chain.
+                usable = [
+                    fx for fx in rows
+                    if str(getattr(fx, "home_team", "") or "").strip().casefold() not in {"", "unknown"}
+                    and str(getattr(fx, "away_team", "") or "").strip().casefold() not in {"", "unknown"}
+                ]
+                if usable:
+                    successful.append((name, usable))
+                    rows = usable
                     if self.mode == "fallback" and minimum <= 0:
                         for fx in rows:
                             fx.stats = {**(fx.stats or {}), "provider": name, "provider_chain_mode": self.mode}
