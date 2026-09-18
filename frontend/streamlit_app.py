@@ -266,13 +266,15 @@ with st.sidebar:
         key="prediction_package"
     )
     league_options = [f"{league_id} — {name}" for league_id, name in MAJOR_LEAGUES.items()]
-    default_active_ids = [x.strip() for x in settings.api_football_leagues.split(",") if x.strip()]
+    api_football_leagues = getattr(settings, "api_football_leagues", "39,140,78,135") or "39,140,78,135"
+    api_football_max_active_leagues = int(getattr(settings, "api_football_max_active_leagues", 4) or 4)
+    default_active_ids = [x.strip() for x in api_football_leagues.split(",") if x.strip()]
     default_active_labels = [label for label in league_options if label.split(" — ", 1)[0] in default_active_ids]
     selected_league_labels = st.multiselect(
         "Leagues to include",
         league_options,
         default=default_active_labels,
-        max_selections=max(1, settings.api_football_max_active_leagues),
+        max_selections=max(1, api_football_max_active_leagues),
         help="The API-Football free plan has a 100 requests/day and 10 requests/minute cap. The active batch is limited; all major leagues remain available in the catalogue."
     )
     selected_league_ids = [label.split(" — ", 1)[0] for label in selected_league_labels]
