@@ -183,6 +183,32 @@ class TestProviderRouter(unittest.TestCase):
         self.assertEqual({x["league"] for x in called}, {"4328", "4335"})
         self.assertEqual({x["season"] for x in called}, {"2026-2027"})
 
+    def test_numeric_selection_routes_supported_league_to_football_data(self):
+        fd = Mock()
+        fd.fixtures.return_value = [
+            Fixture(
+                "football-data-1",
+                datetime(2026, 9, 19, 15, tzinfo=timezone.utc),
+                "Premier League",
+                "2026",
+                "Arsenal",
+                "Chelsea",
+            )
+        ]
+        api = Mock()
+        api.fixtures.side_effect = RuntimeError("free season unavailable")
+        composite = CompositeFootballProvider([("football-data", fd), ("api-football", api)])
+        rows = composite.fixtures(
+            datetime(2026, 9, 19, tzinfo=timezone.utc),
+            datetime(2026, 9, 20, tzinfo=timezone.utc),
+            league="39",
+            season=2026,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(fd.fixtures.call_args.kwargs["league"], "PL")
+        self.assertEqual(fd.fixtures.call_args.kwargs["season"], 2026)
+        api.fixtures.assert_not_called()
+
     def test_fallback_uses_second_provider_when_first_fails(self):
         first = Mock()
         second = Mock()
