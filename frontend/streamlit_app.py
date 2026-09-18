@@ -651,6 +651,11 @@ else:
                 with st.spinner("Loading form, odds and match details..."):
                     try:
                         detailed_fx = provider.fixture_by_id(fixture_id) or fx
+                        h2h_state_key = f"h2h_{fixture_id}"
+                        home_id = (detailed_fx.stats or {}).get("home_team_id")
+                        away_id = (detailed_fx.stats or {}).get("away_team_id")
+                        if home_id and away_id and hasattr(provider, "head_to_head"):
+                            st.session_state[h2h_state_key] = provider.head_to_head(home_id, away_id, limit=5)
                         st.session_state[detail_state_key] = detailed_fx
                     except Exception as exc:
                         st.error(f"❌ Could not load detailed match data: {exc}")
@@ -696,6 +701,31 @@ else:
                     "Value": f"{aform.goals_for_per_game:.2f} goals/game",
                 }]
                 st.dataframe(pd.DataFrame(facts), use_container_width=True, hide_index=True)
+
+                # Optional historical context: last five meetings, loaded only
+                # after the user requests detailed match data.
+                h2h_rows = []
+                for row in st.session_state.get(f"h2h_{fixture_id}", []):
+                    teams = row.get("teams") or {}
+                    goals = row.get("goals") or {}
+                    league = row.get("league") or {}
+                    fixture = row.get("fixture") or {}
+                    home_name = (teams.get("home") or {}).get("name", "Home")
+                    away_name = (teams.get("away") or {}).get("name", "Away")
+                    hs = goals.get("home")
+                    aw = goals.get("away")
+                    h2h_rows.append({
+                        "Date": str(fixture.get("date", ""))[:10] or "—",
+                        "Competition": league.get("name", "—"),
+                        "Match": f"{home_name} vs {away_name}",
+                        "Score": f"{hs}-{aw}" if hs is not None and aw is not None else "—",
+                        "Status": (fixture.get("status") or {}).get("short", "—"),
+                    })
+                if h2h_rows:
+                    render_markdown("#### 🔁 Last 5 head-to-head meetings", unsafe_allow_html=False)
+                    st.dataframe(pd.DataFrame(h2h_rows), use_container_width=True, hide_index=True)
+                elif home_id and away_id:
+                    st.caption("Head-to-head history is not available from the configured data provider for this fixture.")
 
                 render_markdown("#### 📈 Top model markets", unsafe_allow_html=False)
                 market_rows = [{
