@@ -391,6 +391,36 @@ else:
 
     render_markdown('</div>', unsafe_allow_html=True)
 
+    # Goals markets: show total-match Over/Under probabilities.
+    render_markdown("---")
+    render_markdown("""
+    <div style="margin: 2rem 0 1rem 0;">
+        <h2 style="margin: 0;">⚽ Goals Over / Under</h2>
+        <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">
+            Model probabilities for total match goals at the 1.5, 2.5 and 3.5 lines.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    goals_rows = []
+    for fx in fixtures:
+        total_goals = [m for m in engine.markets(fx)
+                       if m.market == "Total Goals" and m.selection in
+                       {"Over 1.5", "Under 1.5", "Over 2.5", "Under 2.5", "Over 3.5", "Under 3.5"}]
+        by_selection = {m.selection: m for m in total_goals}
+        if len(by_selection) == 6:
+            goals_rows.append({
+                "Match": f"{fx.home_team} vs {fx.away_team}",
+                "Over 1.5": f"{by_selection['Over 1.5'].probability:.1%}",
+                "Under 1.5": f"{by_selection['Under 1.5'].probability:.1%}",
+                "Over 2.5": f"{by_selection['Over 2.5'].probability:.1%}",
+                "Under 2.5": f"{by_selection['Under 2.5'].probability:.1%}",
+                "Over 3.5": f"{by_selection['Over 3.5'].probability:.1%}",
+                "Under 3.5": f"{by_selection['Under 3.5'].probability:.1%}",
+            })
+
+    if goals_rows:
+        st.dataframe(pd.DataFrame(goals_rows), use_container_width=True, hide_index=True)
     # Generate package button with modern styling
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
