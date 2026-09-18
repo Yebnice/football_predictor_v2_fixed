@@ -163,6 +163,11 @@ class AllSportsAPIProvider(FootballProvider):
             },
         )
 
+    def leagues(self) -> list[dict[str, Any]]:
+        payload = self._get("Leagues")
+        rows = payload.get("result") or []
+        return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
     def fixtures(
         self,
         start: datetime,
@@ -172,13 +177,19 @@ class AllSportsAPIProvider(FootballProvider):
         season: int | str | None = None,
     ) -> list[Fixture]:
         if live:
-            payload = self._get("Livescore", {"timezone": "UTC"})
+            params = {"timezone": "UTC"}
+            if league is not None:
+                params["leagueId"] = str(league)
+            payload = self._get("Livescore", params)
         else:
-            payload = self._get("Fixtures", {
+            params = {
                 "from": start.date().isoformat(),
                 "to": end.date().isoformat(),
                 "timezone": "UTC",
-            })
+            }
+            if league is not None:
+                params["leagueId"] = str(league)
+            payload = self._get("Fixtures", params)
         rows = payload.get("result") or []
         if isinstance(rows, dict):
             rows = [value for value in rows.values() if isinstance(value, dict)]
