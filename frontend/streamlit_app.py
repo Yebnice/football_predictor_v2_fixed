@@ -331,10 +331,15 @@ with st.sidebar:
         "Leagues to include",
         league_options,
         default=default_active_labels,
-        max_selections=max(1, api_football_max_active_leagues),
-        help="The API-Football free plan has a 100 requests/day and 10 requests/minute cap. The active batch is limited; all major leagues remain available in the catalogue."
+        help="You can select as many major leagues as you need. The current API plan determines how many can be refreshed before its daily/minute request quota is reached."
     )
     selected_league_ids = [label.split(" — ", 1)[0] for label in selected_league_labels]
+
+    if len(selected_league_ids) > api_football_max_active_leagues:
+        st.warning(
+            f"You selected {len(selected_league_ids)} leagues. The configured safe batch is {api_football_max_active_leagues}. "
+            "The app will still use your selection, but a free API-Football plan may run out of requests."
+        )
 
     render_markdown('<div class="settings-group-label">Status</div>', unsafe_allow_html=True)
     active_provider_names = getattr(provider, "provider_names", [settings.football_provider])
