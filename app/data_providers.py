@@ -1798,8 +1798,22 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
     api_football_leagues = getattr(settings, "api_football_leagues", "39,140,78,135") or "39,140,78,135"
     api_football_use_standings_form = bool(getattr(settings, "api_football_use_standings_form", True))
 
+    # Preserve a resilient free-first fallback even when an older deployment
+    # still has FOOTBALL_PROVIDER=api-football. This prevents a stale single-provider
+    # setting from bypassing the configured OpenFootball/TheSportsDB fallbacks.
+    provider_name = settings.football_provider
+    provider_chain = settings.football_provider_chain
+    if (
+        str(provider_name or "").strip().lower() in {"api-football", "api_football", "api-sports", "apisports"}
+        and str(getattr(settings, "football_provider_mode", "fallback")).strip().lower() == "fallback"
+    ):
+        existing = [x.strip() for x in str(provider_chain or "").split(",") if x.strip()]
+        fallback_first = ["openfootball", "thesportsdb", "livescorefootball"]
+        provider_chain = ",".join(dict.fromkeys(fallback_first + existing))
+        provider_name = "auto"
+
     return build_provider(
-        settings.football_provider,
+        provider_name,
         settings.football_api_base_url,
         settings.api_football_key or settings.football_api_key,
         api_football_keys=getattr(settings, "api_football_keys", ""),
@@ -1824,7 +1838,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         isports_base_url=getattr(settings, "isports_base_url", "https://api.isportsapi.com"),
         bigballsdata_api_key=getattr(settings, "bigballsdata_api_key", ""),
         bigballsdata_base_url=getattr(settings, "bigballsdata_base_url", "https://api.bigballsdata.com/v1"),
-        provider_chain=settings.football_provider_chain,
+        provider_chain=provider_chain,
         provider_mode=settings.football_provider_mode,
         openfootball_base_url=getattr(settings, "openfootball_base_url", "https://raw.githubusercontent.com/openfootball/football.json/master"),
     )
