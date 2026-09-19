@@ -144,6 +144,7 @@ class SlipGenerator:
         used_signatures: set[tuple[str, ...]] = set()
         used_fixture_counts: Counter[str] = Counter()
         used_exact_outcomes: Counter[tuple[str, str, str]] = Counter()
+        used_families: Counter[str] = Counter()
 
         for slip_index in range(1, requested_slips + 1):
             seed = hashlib.sha256(
@@ -151,9 +152,48 @@ class SlipGenerator:
             ).hexdigest()
             rng = random.Random(seed)
             target = count if count is not None else self._target_size(period, rng)
+            # Never exceed the available unique fixtures. The lower bound is
+            # checked above, so this still stays inside the product range.
+            target = min(target, len(fixture_ids))
             selected: list[dict] = []
+            slip_family_counts: Counter[str] = Counter()
 
-            # Sample without replacement by fixture. Lower-use fixtures and
+            # Seed the slip with several different outcome families when the
+            # available pool supports them. This prevents a package from
+            # collapsing into dozens of "Under" selections.
+            family_to_fixtures: dict[str, list[str]] = defaultdict(list)
+            for fixture_id in fixture_ids:
+                for item in by_fixture[fixture_id]:
+                    family_to_fixtures[item["family"]].append(fixture_id)
+
+            family_order = list(family_to_fixtures)
+            rng.shuffle(family_order)
+            desired_family_count = min(4, len(family_order), target)
+            seeded_fixtures: set[str] = set()
+            for family in family_order:
+                if len(slip_family_counts) >= desired_family_count:
+                    break
+                candidates = [
+                    fid for fid in dict.fromkeys(family_to_fixtures[family])
+                    if fid not in seeded_fixtures
+                ]
+                if not candidates:
+                    continue
+                # Prefer fixtures that have been used less often in earlier slips.
+                candidates.sort(key=lambda fid: (used_fixture_counts[fid], fid))
+                fid = candidates[rng.randrange(min(len(candidates), 5))]
+                family_candidates = [
+                    item for item in by_fixture[fid] if item["family"] == family
+                ]
+                chosen = rng.choice(family_candidates)
+                selected.append(dict(chosen))
+                seeded_fixtures.add(fid)
+                slip_family_counts[family] += 1
+                used_fixture_counts[fid] += 1
+                used_exact_outcomes[(fid, chosen["market"], chosen["selection"])] += 1
+                used_families[family] += 1
+
+            # Sample without replacement by fixture for the remaining slots. Lower-use fixtures and
             # higher-probability outcomes are preferred, but the RNG seed makes
             # each package reproducible.
             available = list(fixture_ids)
@@ -166,11 +206,13 @@ class SlipGenerator:
                         exact_key = (fixture_id, item["market"], item["selection"])
                         reuse_penalty = 1.0 / (1.0 + used_exact_outcomes[exact_key])
                         fixture_penalty = 1.0 / (1.0 + used_fixture_counts[fixture_id])
+                        family_penalty = 1.0 / (1.0 + slip_family_counts[item["family"]] + used_families[item["family"]] * 0.15)
                         best_weight = max(
                             best_weight,
                             max(0.001, float(item["probability"]) ** 2.5)
                             * reuse_penalty
-                            * fixture_penalty,
+                            * fixture_penalty
+                            * family_penalty,
                         )
                     weighted.append((fixture_id, best_weight))
 
@@ -198,6 +240,8 @@ class SlipGenerator:
                     * (1.0 / (1.0 + used_exact_outcomes[
                         (fixture_id, item["market"], item["selection"])
                     ]))
+                    * (1.0 / (1.0 + slip_family_counts[item["family"]]))
+                    * (1.0 / (1.0 + used_families[item["family"]] * 0.15))
                     for item in top
                 ]
                 chosen = rng.choices(top, weights=choice_weights, k=1)[0]
@@ -206,6 +250,8 @@ class SlipGenerator:
                 used_exact_outcomes[
                     (fixture_id, chosen["market"], chosen["selection"])
                 ] += 1
+                slip_family_counts[chosen["family"]] += 1
+                used_families[chosen["family"]] += 1
 
             if len(selected) < target:
                 raise ValueError(
