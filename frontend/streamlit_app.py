@@ -78,7 +78,12 @@ football_data_key = _streamlit_secret(
 )
 bigballsdata_api_key = _streamlit_secret("BIGBALLSDATA_API_KEY", getattr(settings, "bigballsdata_api_key", ""))
 bsd_api_key = _streamlit_secret("BSD_API_KEY", getattr(settings, "bsd_api_key", ""))
-allsportsapi_key = _streamlit_secret("ALLSPORTSAPI_API_KEY", getattr(settings, "allsportsapi_api_key", ""))
+provider_name_secret = _streamlit_secret("FOOTBALL_PROVIDER", getattr(settings, "football_provider", "auto"))
+provider_chain_secret = _streamlit_secret(
+    "FOOTBALL_PROVIDER_CHAIN",
+    getattr(settings, "football_provider_chain", ""),
+)
+allsportsapi_key = _streamlit_secret("ALLSPORTSAPI_API_KEY", getattr(settings, "allsportsapi_key", ""))
 isports_api_key = _streamlit_secret("ISPORTS_API_KEY", getattr(settings, "isports_api_key", ""))
 groq_api_key = _streamlit_secret("GROQ_API_KEY", getattr(settings, "groq_api_key", ""))
 groq_model = _streamlit_secret("GROQ_MODEL", getattr(settings, "groq_model", "openai/gpt-oss-120b"))
@@ -101,6 +106,10 @@ if bigballsdata_api_key:
     settings.bigballsdata_api_key = bigballsdata_api_key
 if bsd_api_key:
     settings.bsd_api_key = bsd_api_key
+if provider_name_secret:
+    settings.football_provider = provider_name_secret
+if provider_chain_secret:
+    settings.football_provider_chain = provider_chain_secret
 if allsportsapi_key:
     settings.allsportsapi_api_key = allsportsapi_key
 if isports_api_key:
@@ -578,6 +587,25 @@ else:
         help="Shows more of the match pool without requesting additional data from the providers."
     ) if max_cards > 10 else max_cards
 
+    # BSD provides real total-corners consensus markets. Enrich only the cards
+    # actually displayed, and only for BSD-origin fixtures, so hidden monthly
+    # fixtures do not create a large odds-request fan-out.
+    for fx in fixtures[:show_cards]:
+        if not str(fx.fixture_id).startswith("bsd-"):
+            continue
+        if any(str(k).startswith("corner_over_") for k in (fx.odds or {})):
+            continue
+        try:
+            detailed = provider.fixture_by_id(fx.fixture_id)
+            if detailed:
+                fx.odds = detailed.odds or fx.odds
+                fx.home_form = detailed.home_form
+                fx.away_form = detailed.away_form
+                fx.home_xg = detailed.home_xg if detailed.home_xg is not None else fx.home_xg
+                fx.away_xg = detailed.away_xg if detailed.away_xg is not None else fx.away_xg
+        except Exception:
+            pass
+
     for i, fx in enumerate(fixtures[:show_cards]):
         # Keep the publishable "tip" shortlist separate from the full outcome
         # probabilities. A high-probability outcome can be valid model output
@@ -636,10 +664,22 @@ else:
             for label in ["1X", "X2", "12"] if label in double_chance
         )
 
+        has_real_corner_market = any(
+            not bool(item.metadata.get("estimated", True))
+            for item in total_corner_markets
+        )
+        corner_source_label = (
+            "Corner probabilities — BSD consensus (market-implied)"
+            if has_real_corner_market
+            else "Corner probabilities — model estimates"
+        )
         corner_html = "".join(
             f'<div style="display:flex;justify-content:space-between;margin:0.3rem 0;">'
             f'<span style="color:var(--text-secondary);font-size:0.86rem;">{esc(item.selection)}</span>'
-            f'<span style="color:var(--text-primary);font-weight:700;">{item.probability:.1%}</span>'
+            f'<span style="color:var(--text-primary);font-weight:700;">'
+            f'{item.probability:.1%}'
+            f'{f" · odds {item.market_odds:.2f}" if item.market_odds else ""}'
+            f'</span>'
             f'</div>'
             for item in total_corner_markets
         )
@@ -675,7 +715,7 @@ else:
             </div>
 
             <div style="margin-bottom: 1rem;">
-                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">Corner probabilities — model estimates</div>
+                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">{corner_source_label}</div>
                 {corner_html}
             </div>
 
