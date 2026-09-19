@@ -1042,7 +1042,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    render_markdown('<div class="settings-group-label">Prediction window</div>', unsafe_allow_html=True)
+    render_markdown('<div class="settings-group-label">Package window</div>', unsafe_allow_html=True)
     pkg = st.selectbox(
         "Select Time Window",
         ["Daily", "Weekly", "Monthly", "Live"],
@@ -1145,12 +1145,14 @@ except Exception as e:
     st.error(f"Failed to fetch fixtures: {str(e)}")
     fixtures = []
 
-# Modern fixtures header
+# Fixture pool overview
 render_markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin: 2rem 0 1rem 0;">
     <div>
-        <h2 style="margin: 0;">📅 {pkg} Predictions</h2>
-        <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">{time_range} • {len(fixtures)} fixtures available</p>
+        <h2 style="margin: 0;">📅 {pkg} Fixture Pool</h2>
+        <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">
+            {time_range} • {len(fixtures)} fixtures available
+        </p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1164,228 +1166,47 @@ if not fixtures:
     </div>
     """, unsafe_allow_html=True)
 else:
-    # Modern card-based fixture display
-    render_markdown('<div class="fixtures-grid">', unsafe_allow_html=True)
+    max_rows = min(100, len(fixtures))
+    show_rows = st.slider(
+        "Fixtures shown",
+        min_value=min(10, max_rows),
+        max_value=max_rows,
+        value=min(25, max_rows),
+        step=5 if max_rows >= 15 else 1,
+        help="Controls how many fixture records are visible without requesting additional provider data."
+    ) if max_rows > 10 else max_rows
 
-    max_cards = min(50, len(fixtures))
-    show_cards = st.slider(
-        "Matches shown",
-        min_value=min(10, max_cards),
-        max_value=max_cards,
-        value=min(20, max_cards),
-        step=5 if max_cards >= 15 else 1,
-        help="Shows more of the match pool without requesting additional data from the providers."
-    ) if max_cards > 10 else max_cards
-
-    # BSD provides real total-corners consensus markets. Enrich only the cards
-    # actually displayed, and only for BSD-origin fixtures, so hidden monthly
-    # fixtures do not create a large odds-request fan-out.
-    for fx in fixtures[:show_cards]:
-        if not str(fx.fixture_id).startswith("bsd-"):
-            continue
-        if any(str(k).startswith("corner_over_") for k in (fx.odds or {})):
-            continue
-        try:
-            detailed = provider.fixture_by_id(fx.fixture_id)
-            if detailed:
-                fx.odds = detailed.odds or fx.odds
-                fx.home_form = detailed.home_form
-                fx.away_form = detailed.away_form
-                fx.home_xg = detailed.home_xg if detailed.home_xg is not None else fx.home_xg
-                fx.away_xg = detailed.away_xg if detailed.away_xg is not None else fx.away_xg
-        except Exception:
-            pass
-
-    for i, fx in enumerate(fixtures[:show_cards]):
-        # Keep the publishable "tip" shortlist separate from the full outcome
-        # probabilities. A high-probability outcome can be valid model output
-        # even when it is intentionally excluded from the tip band (>75%).
-        best = engine.shortlist(fx, settings.min_selection_confidence, 3)
-        all_markets = engine.markets(fx)
-        outcome_markets = {
-            m.selection: m for m in all_markets if m.market == "1X2"
-        }
-        double_chance = {
-            m.selection: m for m in all_markets if m.market == "Double Chance"
-        }
-
-        corner_markets = corners_cards_engine.markets(fx)
-        total_corner_markets = [
-            m for m in corner_markets
-            if m.market == "Total Corners"
-        ]
-
-        primary = best[0] if best else (outcome_markets.get("Home Win") or outcome_markets.get("Draw") or outcome_markets.get("Away Win"))
-        primary_probability = primary.probability if primary else 0.0
-
-        # Determine confidence level without hiding the fixture when no
-        # publishable shortlist item exists.
-        if primary_probability >= 0.75:
-            confidence_class = "status-high"
-            confidence_label = "HIGH"
-        elif primary_probability >= 0.65:
-            confidence_class = "status-medium"
-            confidence_label = "MEDIUM"
-        else:
-            confidence_class = "status-low"
-            confidence_label = "LOW"
-
-        def _outcome_card(label: str) -> str:
-            item = outcome_markets.get(label)
-            probability = f"{item.probability:.1%}" if item else "—"
-            return (
-                '<div style="flex:1;text-align:center;padding:0.65rem 0.4rem;'
-                'background:var(--background-card-alt);border-radius:8px;">'
-                f'<div style="color:var(--text-secondary);font-size:0.78rem;">{esc(label)}</div>'
-                f'<div style="color:var(--text-primary);font-size:1.05rem;font-weight:700;">{probability}</div>'
-                '</div>'
-            )
-
-        outcome_html = "".join(
-            _outcome_card(label)
-            for label in ["Home Win", "Draw", "Away Win"]
-        )
-
-        double_chance_html = "".join(
-            f'<div style="flex:1;text-align:center;padding:0.55rem 0.4rem;border:1px solid var(--border-color);border-radius:8px;">'
-            f'<div style="color:var(--text-secondary);font-size:0.75rem;">{esc(label)}</div>'
-            f'<div style="color:var(--text-primary);font-weight:700;">{double_chance[label].probability:.1%}</div>'
-            f'</div>'
-            for label in ["1X", "X2", "12"] if label in double_chance
-        )
-
-        has_real_corner_market = any(
-            not bool(item.metadata.get("estimated", True))
-            for item in total_corner_markets
-        )
-        corner_source_label = (
-            "Corner probabilities — BSD consensus (market-implied)"
-            if has_real_corner_market
-            else "Corner probabilities — model estimates"
-        )
-        corner_html = "".join(
-            f'<div style="display:flex;justify-content:space-between;margin:0.3rem 0;">'
-            f'<span style="color:var(--text-secondary);font-size:0.86rem;">{esc(item.selection)}</span>'
-            f'<span style="color:var(--text-primary);font-weight:700;">'
-            f'{item.probability:.1%}'
-            f'{f" · odds {item.market_odds:.2f}" if item.market_odds else ""}'
-            f'</span>'
-            f'</div>'
-            for item in total_corner_markets
-        )
-
-        top_html = (
-            "".join(
-                f'<div style="display:flex;justify-content:space-between;margin:0.3rem 0;">'
-                f'<span style="color:var(--text-secondary);font-size:0.86rem;">{esc(item.market)} — {esc(item.selection)}</span>'
-                f'<span style="color:var(--text-primary);font-weight:700;">{item.probability:.1%}</span>'
-                f'</div>'
-                for item in best
-            )
-            if best else
-            '<div style="color:var(--text-secondary);font-size:0.85rem;">No selection currently meets the configured tip threshold. Full model probabilities remain available above.</div>'
-        )
-
-        fair_odds_text = f"{primary.fair_odds:.2f}" if primary and primary.fair_odds else "—"
-
-        render_markdown(f"""
-        <div class="prediction-card">
-            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
-                <div>
-                    <h3 style="margin: 0; font-size: 1.25rem;">{esc(fx.home_team)} vs {esc(fx.away_team)}</h3>
-                    <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0; font-size: 0.9rem;">{esc(fx.league)}</p>
-                </div>
-                <span class="status-badge {confidence_class}">{confidence_label}</span>
-            </div>
-
-            <div style="margin-bottom: 1rem;">
-                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">Match outcome probabilities</div>
-                <div style="display:flex;gap:0.5rem;">{outcome_html}</div>
-                <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">{double_chance_html}</div>
-            </div>
-
-            <div style="margin-bottom: 1rem;">
-                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">{corner_source_label}</div>
-                {corner_html}
-            </div>
-
-            <div style="margin-bottom: 1rem;">
-                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">Top publishable markets</div>
-                {top_html}
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <span style="color: var(--text-secondary); font-size: 0.85rem;">Primary fair odds:</span>
-                    <span style="color: var(--text-primary); font-weight: 600; margin-left: 0.5rem;">{fair_odds_text}</span>
-                </div>
-                <div style="font-size: 0.85rem; color: var(--text-secondary);">
-                    {fx.date.strftime('%Y-%m-%d %H:%M')} UTC
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    render_markdown('</div>', unsafe_allow_html=True)
-
-    # Match-data overview: derived only from the already-fetched fixture pool,
-    # so this adds useful information without spending more API quota.
-    overview_rows = []
-    for fx in fixtures:
-        best_market = engine.shortlist(fx, settings.min_selection_confidence, 1)
-        row = {
+    pool_rows = []
+    for fx in fixtures[:show_rows]:
+        pool_rows.append({
             "Kick-off (UTC)": fx.date.strftime("%Y-%m-%d %H:%M"),
             "League": fx.league,
             "Match": f"{fx.home_team} vs {fx.away_team}",
             "Home Form": f"{fx.home_form.wins}W-{fx.home_form.draws}D-{fx.home_form.losses}L",
             "Away Form": f"{fx.away_form.wins}W-{fx.away_form.draws}D-{fx.away_form.losses}L",
-            "Home GPG": f"{fx.home_form.goals_for_per_game:.2f}",
-            "Away GPG": f"{fx.away_form.goals_for_per_game:.2f}",
-            "Top Model Market": f"{best_market[0].market}: {best_market[0].selection}" if best_market else "—",
-            "Probability": f"{best_market[0].probability:.1%}" if best_market else "—",
-        }
-        overview_rows.append(row)
+        })
 
-    if overview_rows:
+    if pool_rows:
         render_markdown("""
         <div style="background: var(--background-card); border-radius: 12px; padding: 1.25rem; margin: 1rem 0; border: 1px solid var(--border-color);">
-            <h3 style="margin: 0 0 0.5rem 0;">📊 Match Data Overview</h3>
-            <p style="color: var(--text-secondary); margin: 0;">Form, scoring rates and model markets from the current fixture pool. No extra provider calls are made for this table.</p>
+            <h3 style="margin: 0 0 0.5rem 0;">📋 Available Fixtures</h3>
+            <p style="color: var(--text-secondary); margin: 0;">
+                The dashboard shows fixture data only. Outcome selection is produced when you generate a prediction package.
+            </p>
         </div>
         """, unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame(overview_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(pool_rows), use_container_width=True, hide_index=True)
 
-    # Goals markets: show total-match Over/Under probabilities.
-    render_markdown("---")
     render_markdown("""
-    <div style="margin: 2rem 0 1rem 0;">
-        <h2 style="margin: 0;">⚽ Goals Over / Under</h2>
-        <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">
-            Model probabilities for total match goals at the 1.5, 2.5 and 3.5 lines.
-        </p>
+    <div style="background: var(--background-card-alt); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; margin: 1rem 0;">
+        <strong>Prediction output is hidden from the dashboard.</strong>
+        <span style="color: var(--text-secondary); margin-left: 0.35rem;">
+            Use the button below to run the statistical model, AI review layer, Top High-Confidence results and 5-slip package.
+        </span>
     </div>
     """, unsafe_allow_html=True)
 
-    goals_rows = []
-    for fx in fixtures:
-        total_goals = [m for m in engine.markets(fx)
-                       if m.market == "Total Goals" and m.selection in
-                       {"Over 1.5", "Under 1.5", "Over 2.5", "Under 2.5", "Over 3.5", "Under 3.5"}]
-        by_selection = {m.selection: m for m in total_goals}
-        if len(by_selection) == 6:
-            goals_rows.append({
-                "Match": f"{fx.home_team} vs {fx.away_team}",
-                "Over 1.5": f"{by_selection['Over 1.5'].probability:.1%}",
-                "Under 1.5": f"{by_selection['Under 1.5'].probability:.1%}",
-                "Over 2.5": f"{by_selection['Over 2.5'].probability:.1%}",
-                "Under 2.5": f"{by_selection['Under 2.5'].probability:.1%}",
-                "Over 3.5": f"{by_selection['Over 3.5'].probability:.1%}",
-                "Under 3.5": f"{by_selection['Under 3.5'].probability:.1%}",
-            })
-
-    if goals_rows:
-        st.dataframe(pd.DataFrame(goals_rows), use_container_width=True, hide_index=True)
-    # Generate package button with modern styling
+# Generate package button with modern styling
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🎯 Generate Prediction Package", type="primary", use_container_width=True):
@@ -1682,7 +1503,7 @@ else:
     <div style="margin: 2rem 0 1rem 0;">
         <h2 style="margin: 0;">🤖 AI Match Analysis</h2>
         <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">
-            Choose Gemini Flash, Groq, or both for the explanation layer. The statistical model remains the source of the probabilities.
+            Choose Gemini Flash, Groq, or both for the explanation layer. The statistical model remains the source of the outcome probabilities.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -1922,113 +1743,9 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
 
-# Analytics Dashboard Section
-render_markdown("---")
-render_markdown("""
-<div style="margin: 2rem 0 1rem 0;">
-    <h2 style="margin: 0;">📊 Analytics Dashboard</h2>
-    <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0;">Visual insights and trend analysis</p>
-</div>
-""", unsafe_allow_html=True)
-
-if fixtures:
-    # Prepare data for visualizations
-    fixture_data = []
-    for fx in fixtures[:15]:  # Analyze first 15 fixtures
-        best = engine.shortlist(fx, settings.min_selection_confidence, 1)
-        if best:
-            p = best[0]
-            fixture_data.append({
-                "Match": f"{fx.home_team} vs {fx.away_team}",
-                "League": fx.league,
-                "Market": p.market,
-                "Selection": p.selection,
-                "Probability": p.probability,
-                "Fair Odds": p.fair_odds,
-                "Date": fx.date
-            })
-
-    if fixture_data:
-        df = pd.DataFrame(fixture_data)
-
-        # Probability Distribution Chart
-        col1, col2 = st.columns(2)
-
-        with col1:
-            render_markdown("""
-            <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid var(--border-color);">
-                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">Probability Distribution</h4>
-            </div>
-            """, unsafe_allow_html=True)
-
-            fig_prob = px.histogram(
-                df,
-                x="Probability",
-                nbins=10,
-                title="Distribution of Prediction Probabilities",
-                color_discrete_sequence=["#D97757"]
-            )
-            fig_prob.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#1F1E1D"),
-                xaxis=dict(gridcolor="rgba(31,30,29,0.08)"),
-                yaxis=dict(gridcolor="rgba(31,30,29,0.08)")
-            )
-            st.plotly_chart(fig_prob, use_container_width=True, theme="streamlit")
-
-        with col2:
-            render_markdown("""
-            <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid var(--border-color);">
-                <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">Market Types Analysis</h4>
-            </div>
-            """, unsafe_allow_html=True)
-
-            market_counts = df["Market"].value_counts()
-            fig_market = px.pie(
-                values=market_counts.values,
-                names=market_counts.index,
-                title="Prediction Market Distribution",
-                color_discrete_sequence=px.colors.sequential.Oranges_r
-            )
-            fig_market.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#1F1E1D")
-            )
-            st.plotly_chart(fig_market, use_container_width=True, theme="streamlit")
-
-        # The period-specific Top High-Confidence Predictions section is rendered
-        # alongside the generated Daily/Weekly/Monthly package above.
-        
-        # Probability vs Odds Scatter Plot
-        render_markdown("""
-        <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border: 1px solid var(--border-color);">
-            <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">📈 Probability vs Fair Odds Analysis</h4>
-        </div>
-        """, unsafe_allow_html=True)
-
-        fig_scatter = px.scatter(
-            df,
-            x="Probability",
-            y="Fair Odds",
-            color="Market",
-            size="Probability",
-            hover_data=["Match", "Selection"],
-            title="Probability vs Fair Odds Relationship",
-            color_discrete_sequence=px.colors.qualitative.Bold
-        )
-        fig_scatter.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#1F1E1D"),
-            xaxis=dict(gridcolor="rgba(31,30,29,0.08)", title="Probability"),
-            yaxis=dict(gridcolor="rgba(31,30,29,0.08)", title="Fair Odds")
-        )
-        st.plotly_chart(fig_scatter, use_container_width=True, theme="streamlit")
-
-else:
-    st.info("📊 No fixture data available for analytics. Generate predictions first to see visualizations.")
+# Analytics is intentionally kept out of the main dashboard output.
+# Prediction probabilities and market charts are shown only as part of generated
+# package output or explicitly requested match analysis.
 
 # Architecture section with modern styling
 render_markdown("---")
