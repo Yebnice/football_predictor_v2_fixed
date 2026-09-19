@@ -333,7 +333,7 @@ class BigBallsDataProvider(FootballProvider):
         return Fixture(
             fixture_id=f"bigballs-{row.get('id')}",
             date=BigBallsDataProvider._parse_dt(row.get("kickoff_utc")),
-            league=str((row.get("league") or {}).get("name") if isinstance(row.get("league"), dict) else row.get("league") or "Unknown"),
+            league=str(((row.get("league") or {}).get("name") if isinstance(row.get("league"), dict) else row.get("league")) or row.get("league_name") or row.get("competition_name") or "Unknown"),
             season=str(row.get("season") or "Unknown"),
             home_team=str(home.get("name") or "Unknown").strip(),
             away_team=str(away.get("name") or "Unknown").strip(),
@@ -2210,7 +2210,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         and str(getattr(settings, "football_provider_mode", "fallback")).strip().lower() == "fallback"
     ):
         existing = [x.strip() for x in str(provider_chain or "").split(",") if x.strip()]
-        fallback_first = ["bsd", "openfootball", "thesportsdb", "livescorefootball"]
+        fallback_first = ["bsd", "bigballsdata", "openfootball", "thesportsdb", "livescorefootball"]
         provider_chain = ",".join(dict.fromkeys(fallback_first + existing))
         provider_name = "auto"
 
@@ -2284,7 +2284,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
     normalized = (name or "auto").lower().strip()
     chain_spec = provider_chain.strip() if provider_chain else (name if "," in name else "")
     if normalized in {"auto", "multi", "composite", "fallback"}:
-        chain_spec = provider_chain.strip() or "bsd,openfootball,thesportsdb,livescorefootball,api-football"
+        chain_spec = provider_chain.strip() or "bsd,bigballsdata,openfootball,thesportsdb,livescorefootball,api-football"
     if chain_spec:
         from .multi_provider import CompositeFootballProvider
         providers: list[tuple[str, FootballProvider]] = []
