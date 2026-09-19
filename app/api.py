@@ -161,6 +161,8 @@ def ml_predictions(days: int = Query(default=1, ge=0, le=31), limit: int = Query
             "selection": row["selection"],
             "probability": row["probability"],
             "fair_odds": row["fair_odds"],
+            "home_lambda": row["home_lambda"],
+            "away_lambda": row["away_lambda"],
             "model_version": row["model_version"],
             "ai_review_score": row["ai_review_score"],
             "ai_rationale": row["ai_rationale"],
