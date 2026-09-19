@@ -779,6 +779,301 @@ class AllSportsAPIProvider(FootballProvider):
         payload = self._get("Odds", {"matchId": event_id, "timezone": "UTC"})
         return payload.get("result") or {}
 
+class BSDProvider(FootballProvider):
+    """Adapter for BSD (Bzzoiro Sports Data) Football API v2.
+
+    Uses the free football API endpoints only: fixtures, live scores, match
+    detail/sub-resources and consensus pre-match odds. Per-bookmaker odds require
+    BSD Football Unlimited and are intentionally not required by this adapter.
+    """
+    API_FOOTBALL_LEAGUE_NAMES: dict[str, str] = {
+        "39": "Premier League",
+        "140": "LaLiga",
+        "78": "Bundesliga",
+        "135": "Serie A",
+        "61": "Ligue 1",
+        "88": "Eredivisie",
+        "94": "Primeira Liga",
+    }
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://sports.bzzoiro.com/api/v2",
+        timeout: float = 20.0,
+        cache_ttl_seconds: float = 60.0,
+    ):
+        if not api_key:
+            raise ValueError("BSD_API_KEY is required when BSD is enabled")
+        self.api_key = str(api_key).strip()
+        self.base_url = base_url.rstrip("/")
+        self.client = httpx.Client(
+            timeout=timeout,
+            headers={"Authorization": f"Token {self.api_key}", "Accept": "application/json"},
+        )
+        self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
+
+    def _get(self, path: str, params: dict[str, Any] | None = None, cacheable: bool = True) -> dict[str, Any]:
+        params = dict(params or {})
+        key = f"{path}?{sorted(params.items())}"
+        if self._cache is not None and cacheable:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
+        response = self.client.get(f"{self.base_url}/{path.lstrip('/')}", params=params)
+        if response.status_code == 401:
+            raise RuntimeError("BSD authentication failed (invalid or missing BSD_API_KEY)")
+        if response.status_code == 402:
+            raise RuntimeError("BSD endpoint requires a paid add-on")
+        if response.status_code == 429:
+            raise RuntimeError("BSD rate limit reached (free football tier is 7,500 requests/day)")
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("BSD returned an unexpected JSON payload")
+        if self._cache is not None and cacheable:
+            self._cache.set(key, payload)
+        return payload
+
+    @staticmethod
+    def _parse_dt(value: Any) -> datetime:
+        raw = str(value or "").strip()
+        if not raw:
+            return datetime.now(timezone.utc)
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.now(timezone.utc)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    def _team(row: Any, side: str) -> dict[str, Any]:
+        value = row.get(f"{side}_team") if isinstance(row, dict) else None
+        if isinstance(value, dict):
+            return value
+        name = row.get(f"{side}_team_name") if isinstance(row, dict) else None
+        team_id = row.get(f"{side}_team_id") if isinstance(row, dict) else None
+        return {"id": team_id, "name": name or value}
+
+    @staticmethod
+    def _score_value(value: Any) -> int | None:
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _normalise(cls, row: dict[str, Any]) -> Fixture:
+        home = cls._team(row, "home")
+        away = cls._team(row, "away")
+        league = row.get("league") or {}
+        score = row.get("score") or {}
+        hs = row.get("home_score")
+        aw = row.get("away_score")
+        if hs is None and isinstance(score, dict):
+            hs = score.get("home")
+        if aw is None and isinstance(score, dict):
+            aw = score.get("away")
+        status_raw = str(row.get("status") or "upcoming").strip().lower()
+        status = {
+            "upcoming": "scheduled",
+            "scheduled": "scheduled",
+            "live": "in_play",
+            "inprogress": "in_play",
+            "in_progress": "in_play",
+            "finished": "finished",
+            "cancelled": "cancelled",
+            "postponed": "postponed",
+            "unresolved": "scheduled",
+        }.get(status_raw, status_raw)
+        kickoff = row.get("kickoff") or row.get("start_time") or row.get("date") or row.get("match_date")
+        home_xg = row.get("home_xg")
+        away_xg = row.get("away_xg")
+        xg = row.get("xg")
+        if isinstance(xg, dict):
+            home_xg = home_xg if home_xg is not None else xg.get("home")
+            away_xg = away_xg if away_xg is not None else xg.get("away")
+        season_value = row.get("season")
+        if isinstance(season_value, dict):
+            season_value = season_value.get("name") or season_value.get("year") or season_value.get("id")
+        league_name = league.get("name") if isinstance(league, dict) else league
+        league_id = league.get("id") if isinstance(league, dict) else row.get("league_id")
+        return Fixture(
+            fixture_id=f"bsd-{row.get('id')}",
+            date=cls._parse_dt(kickoff),
+            league=str(league_name or "Unknown"),
+            season=str(season_value or "Unknown"),
+            home_team=str(home.get("name") or "Unknown").strip(),
+            away_team=str(away.get("name") or "Unknown").strip(),
+            status=status,
+            home_score=cls._score_value(hs),
+            away_score=cls._score_value(aw),
+            home_xg=float(home_xg) if isinstance(home_xg, (int, float)) else None,
+            away_xg=float(away_xg) if isinstance(away_xg, (int, float)) else None,
+            stats={
+                "source": "bsd",
+                "home_team_id": home.get("id"),
+                "away_team_id": away.get("id"),
+                "league_id": league_id,
+                "round": row.get("round_name") or row.get("round_number"),
+                "stage": row.get("stage"),
+                "venue": row.get("venue"),
+                "has_xg": row.get("has_xg"),
+            },
+        )
+
+    @staticmethod
+    def _form_from_rows(rows: list[dict[str, Any]], team_id: int | str | None, before: datetime, n: int = 5) -> TeamForm:
+        if not team_id:
+            return TeamForm()
+        matches: list[tuple[datetime, dict[str, Any]]] = []
+        for row in rows:
+            home = BSDProvider._team(row, "home")
+            away = BSDProvider._team(row, "away")
+            if str(home.get("id")) != str(team_id) and str(away.get("id")) != str(team_id):
+                continue
+            if str(row.get("status") or "").strip().lower() != "finished":
+                continue
+            dt = BSDProvider._parse_dt(row.get("kickoff") or row.get("start_time") or row.get("date") or row.get("match_date"))
+            if dt >= before:
+                continue
+            hs = BSDProvider._score_value(row.get("home_score"))
+            aw = BSDProvider._score_value(row.get("away_score"))
+            if hs is None or aw is None:
+                continue
+            matches.append((dt, row))
+        matches.sort(key=lambda item: item[0], reverse=True)
+        wins = draws = losses = gf = ga = 0
+        for _, row in matches[:n]:
+            home = BSDProvider._team(row, "home")
+            hs = BSDProvider._score_value(row.get("home_score"))
+            aw = BSDProvider._score_value(row.get("away_score"))
+            if hs is None or aw is None:
+                continue
+            if str(home.get("id")) == str(team_id):
+                gf += hs
+                ga += aw
+                if hs > aw: wins += 1
+                elif hs == aw: draws += 1
+                else: losses += 1
+            else:
+                gf += aw
+                ga += hs
+                if aw > hs: wins += 1
+                elif aw == hs: draws += 1
+                else: losses += 1
+        return TeamForm(matches=wins + draws + losses, wins=wins, draws=draws, losses=losses,
+                        goals_for=float(gf), goals_against=float(ga))
+
+    def _resolve_league_id(self, league: int | str | None) -> int | str | None:
+        if league is None or str(league).strip() == "":
+            return None
+        text = str(league).strip()
+        if not text.isdigit():
+            return text
+        name = self.API_FOOTBALL_LEAGUE_NAMES.get(text)
+        if not name:
+            return None
+        payload = self._get("leagues/", {"limit": 200, "offset": 0})
+        rows = payload.get("results") or []
+        target = name.casefold().replace("-", " ")
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            candidate = str(row.get("name") or "").strip().casefold().replace("-", " ")
+            if candidate == target or candidate.startswith(target) or target in candidate:
+                return row.get("id")
+        return None
+
+    def fixtures(
+        self,
+        start: datetime,
+        end: datetime,
+        live: bool = False,
+        league: int | str | None = None,
+        season: int | str | None = None,
+    ) -> list[Fixture]:
+        resolved_league = self._resolve_league_id(league)
+        params: dict[str, Any] = {"limit": 200, "offset": 0}
+        if resolved_league is not None:
+            params["league_id"] = resolved_league
+        if live:
+            params["status"] = "live"
+            endpoint = "events/live/"
+        else:
+            params["date_from"] = start.date().isoformat()
+            params["date_to"] = end.date().isoformat()
+            endpoint = "events/"
+        payload = self._get(endpoint, params, cacheable=not live)
+        rows = payload.get("results") or []
+        fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
+        return [fx for fx in fixtures if start <= fx.date <= end]
+
+    def fixture_by_id(self, fixture_id: str) -> Fixture | None:
+        event_id = fixture_id.removeprefix("bsd-")
+        payload = self._get(f"events/{event_id}/")
+        if not payload:
+            return None
+        fx = self._normalise(payload)
+        for key, attr in (("home_team_id", "home_form"), ("away_team_id", "away_form")):
+            team_id = fx.stats.get(key)
+            if team_id:
+                try:
+                    history = self._get("events/", {
+                        "team_id": team_id, "status": "finished", "limit": 50, "offset": 0
+                    })
+                    form = self._form_from_rows(history.get("results") or [], team_id, fx.date, 5)
+                    setattr(fx, attr, form)
+                except (RuntimeError, httpx.HTTPError):
+                    pass
+        try:
+            fx.odds = self._normalise_odds(self._get(f"events/{event_id}/odds/"))
+        except (RuntimeError, httpx.HTTPError):
+            pass
+        return fx
+
+    @staticmethod
+    def _normalise_odds(payload: dict[str, Any]) -> dict[str, float]:
+        odds = payload.get("odds") or {}
+        out: dict[str, float] = {}
+        mapping = {
+            "home_win": "home",
+            "draw": "draw",
+            "away_win": "away",
+            "over_15_goals": "over_1.5",
+            "under_15_goals": "under_1.5",
+            "over_25_goals": "over_2.5",
+            "under_25_goals": "under_2.5",
+            "btts_yes": "btts_yes",
+            "btts_no": "btts_no",
+        }
+        for source, target in mapping.items():
+            try:
+                value = odds.get(source)
+                if value is not None:
+                    out[target] = float(value)
+            except (TypeError, ValueError):
+                pass
+        return out
+
+    def odds(self, fixture_id: str) -> dict[str, Any]:
+        event_id = fixture_id.removeprefix("bsd-")
+        return self._get(f"events/{event_id}/odds/")
+
+    def events(self, fixture_id: str) -> list[dict[str, Any]]:
+        event_id = fixture_id.removeprefix("bsd-")
+        payload = self._get(f"events/{event_id}/incidents/", cacheable=False)
+        return payload.get("incidents") or payload.get("results") or []
+
+    def lineups(self, fixture_id: str) -> list[dict[str, Any]]:
+        event_id = fixture_id.removeprefix("bsd-")
+        payload = self._get(f"events/{event_id}/lineups/")
+        return payload.get("lineups") or payload.get("results") or []
+
+    def close(self) -> None:
+        self.client.close()
+
+
 class TheSportsDBProvider(FootballProvider):
     """Free TheSportsDB V1 adapter.
 
@@ -1838,6 +2133,8 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         isports_base_url=getattr(settings, "isports_base_url", "https://api.isportsapi.com"),
         bigballsdata_api_key=getattr(settings, "bigballsdata_api_key", ""),
         bigballsdata_base_url=getattr(settings, "bigballsdata_base_url", "https://api.bigballsdata.com/v1"),
+        bsd_api_key=getattr(settings, "bsd_api_key", ""),
+        bsd_base_url=getattr(settings, "bsd_base_url", "https://sports.bzzoiro.com/api/v2"),
         provider_chain=provider_chain,
         provider_mode=settings.football_provider_mode,
         openfootball_base_url=getattr(settings, "openfootball_base_url", "https://raw.githubusercontent.com/openfootball/football.json/master"),
@@ -1865,6 +2162,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     isports_base_url: str = "https://api.isportsapi.com",
                     bigballsdata_api_key: str = "",
                     bigballsdata_base_url: str = "https://api.bigballsdata.com/v1",
+                    bsd_api_key: str = "",
+                    bsd_base_url: str = "https://sports.bzzoiro.com/api/v2",
                     provider_chain: str = "",
                     provider_mode: str = "fallback",
                     api_football_keys: str = "",
@@ -1878,7 +2177,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
     normalized = (name or "auto").lower().strip()
     chain_spec = provider_chain.strip() if provider_chain else (name if "," in name else "")
     if normalized in {"auto", "multi", "composite", "fallback"}:
-        chain_spec = provider_chain.strip() or "openfootball,thesportsdb,livescorefootball,api-football"
+        chain_spec = provider_chain.strip() or "bsd,openfootball,thesportsdb,livescorefootball,api-football"
     if chain_spec:
         from .multi_provider import CompositeFootballProvider
         providers: list[tuple[str, FootballProvider]] = []
@@ -1908,6 +2207,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     isports_base_url=isports_base_url,
                     bigballsdata_api_key=bigballsdata_api_key,
                     bigballsdata_base_url=bigballsdata_base_url,
+                    bsd_api_key=bsd_api_key,
+                    bsd_base_url=bsd_base_url,
                     openfootball_base_url=openfootball_base_url,
                 )
             except ValueError as exc:
@@ -1922,6 +2223,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                 if key in {"isportsapi", "isports"} and not isports_api_key:
                     continue
                 if key in {"bigballsdata", "big-balls-data", "bigballs"} and not bigballsdata_api_key:
+                    continue
+                if key in {"bsd", "bzzoiro", "bzzoiro-sports-data"} and not bsd_api_key:
                     continue
                 logger.warning("Skipping unavailable provider %s: %s", item, exc)
                 continue
@@ -1964,6 +2267,12 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
             api_key=bigballsdata_api_key,
             base_url=bigballsdata_base_url or "https://api.bigballsdata.com/v1",
             cache_ttl_seconds=cache_ttl_seconds,
+        )
+    if normalized in {"bsd", "bzzoiro", "bzzoiro-sports-data"}:
+        return BSDProvider(
+            api_key=bsd_api_key,
+            base_url=bsd_base_url or "https://sports.bzzoiro.com/api/v2",
+            cache_ttl_seconds=max(cache_ttl_seconds, 30.0),
         )
     if normalized in {"isportsapi", "isports"}:
         return ISportsAPIProvider(
