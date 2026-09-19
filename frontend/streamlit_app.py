@@ -32,6 +32,7 @@ from app.corners_cards import CornersCardsEngine
 from app.slips import SlipGenerator
 from app.services.ai_groq import GroqExplainer
 from app.services.ai_gemini import GeminiExplainer
+from app.services.ai_agent import AIPredictionAgent
 from app.store import Store
 from app.auth import AuthConfig, hash_password, verify_password
 from app.admin_board import bootstrap_admin, serialize_tip
@@ -158,8 +159,17 @@ def _pdf_safe(value) -> str:
     )
 
 
-def top_high_confidence_predictions(fixtures, limit: int):
-    """Return the highest-confidence publishable prediction for each fixture."""
+def top_high_confidence_predictions(
+    fixtures,
+    limit: int,
+    ai_decisions: dict[str, dict] | None = None,
+):
+    """Return high-confidence predictions after optional AI review.
+
+    The AI layer can approve/reject a model candidate or switch to another
+    candidate that already exists in the statistical engine. The probability
+    used for ranking is always the statistical-model probability.
+    """
     candidates = []
     seen_fixtures = set()
 
@@ -168,15 +178,29 @@ def top_high_confidence_predictions(fixtures, limit: int):
         if not fixture_id or fixture_id in seen_fixtures:
             continue
 
-        markets = engine.shortlist(
-            fx,
-            settings.min_selection_confidence,
-            1,
-        )
-        if not markets:
+        if ai_decisions is not None:
+            decision = ai_decisions.get(fixture_id)
+            if not decision or not bool(decision.get("approved")):
+                continue
+            target_market = str(decision.get("market", "") or "")
+            target_selection = str(decision.get("selection", "") or "")
+            matching = [
+                m for m in engine.markets(fx)
+                if m.market == target_market
+                and m.selection == target_selection
+                and settings.min_selection_confidence <= m.probability <= 0.75
+            ]
+        else:
+            matching = engine.shortlist(
+                fx,
+                settings.min_selection_confidence,
+                1,
+            )
+
+        if not matching:
             continue
 
-        prediction = markets[0]
+        prediction = matching[0]
         seen_fixtures.add(fixture_id)
         candidates.append({
             "fixture_id": fixture_id,
@@ -186,12 +210,16 @@ def top_high_confidence_predictions(fixtures, limit: int):
             "selection": prediction.selection,
             "probability": prediction.probability,
             "fair_odds": prediction.fair_odds,
+            "ai_review_score": float(
+                (ai_decisions or {}).get(fixture_id, {}).get("review_score", 0.0)
+            ),
             "date": fx.date,
         })
 
     candidates.sort(
         key=lambda item: (
             item["probability"],
+            item["ai_review_score"],
             item["date"],
             item["home_team"],
             item["away_team"],
@@ -348,7 +376,7 @@ def build_package_pdf(period: str, slips) -> bytes:
                     _pdf_safe(f"{item.get('home_team', '')} vs {item.get('away_team', '')}"),
                     cell_style,
                 ),
-                Paragraph(_pdf_safe(item.get("selection", "")), outcome_style),
+                Paragraph(_pdf_safe(_display_outcome(item)), outcome_style),
             ])
         table = Table(rows, colWidths=[145 * mm, 38 * mm], repeatRows=1, hAlign="LEFT")
         table.setStyle(TableStyle([
@@ -829,6 +857,16 @@ def fetch_package_fixtures(start, end, required_count, selected_league_ids):
 engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_coles_rho)
 corners_cards_engine = CornersCardsEngine()
 slips = SlipGenerator(engine, settings.min_selection_confidence, settings.rng_salt)
+prediction_agent = AIPredictionAgent(
+    engine,
+    provider,
+    min_confidence=settings.min_selection_confidence,
+    gemini_api_key=gemini_api_key,
+    gemini_model=gemini_model,
+    groq_api_key=groq_api_key,
+    groq_model=groq_model,
+    batch_size=30,
+)
 explainer = GroqExplainer(groq_api_key, groq_model)
 gemini_explainer = GeminiExplainer(gemini_api_key, gemini_model)
 
@@ -1205,12 +1243,57 @@ else:
                     else:
                         package_fixtures = []
 
+                    ai_decisions = None
+                    agent_run = None
+                    if pkg in {"Daily", "Weekly", "Monthly"} and package_fixtures:
+                        agent_limits = {
+                            "Daily": 40,
+                            "Weekly": 75,
+                            "Monthly": 125,
+                        }
+                        deep_limits = {
+                            "Daily": 15,
+                            "Weekly": 25,
+                            "Monthly": 35,
+                        }
+                        with st.spinner("🤖 AI prediction agent is reviewing the strongest fixtures and checking deeper evidence..."):
+                            agent_run = prediction_agent.review_fixtures(
+                                package_fixtures,
+                                candidate_limit=agent_limits[pkg],
+                                deep_evidence_limit=deep_limits[pkg],
+                            )
+
+                        minimum_required = {
+                            "Daily": 10,
+                            "Weekly": 20,
+                            "Monthly": 20,
+                        }[pkg]
+                        if agent_run.decisions and len(agent_run.decisions) >= minimum_required:
+                            ai_decisions = agent_run.decisions
+                            st.caption(
+                                "AI agent reviewed "
+                                f"{agent_run.reviewed_fixtures} fixtures, deeply enriched "
+                                f"{agent_run.deep_reviewed_fixtures}, and approved "
+                                f"{agent_run.approved_fixtures}. "
+                                f"Reviewers: {', '.join(agent_run.providers_used) or 'none'}."
+                            )
+                        else:
+                            reason = (
+                                "AI did not return enough validated approvals for the "
+                                f"{pkg.lower()} minimum ({minimum_required}). "
+                                "The package therefore uses the statistical model rather "
+                                "than inventing or padding AI selections."
+                            )
+                            if agent_run.errors:
+                                reason += " " + " ".join(agent_run.errors[:2])
+                            st.warning(reason)
+
                     if pkg == "Daily":
-                        generated = slips.daily(package_fixtures)
+                        generated = slips.daily(package_fixtures, ai_decisions=ai_decisions)
                     elif pkg == "Weekly":
-                        generated = slips.weekly(package_fixtures)
+                        generated = slips.weekly(package_fixtures, ai_decisions=ai_decisions)
                     elif pkg == "Monthly":
-                        generated = slips.monthly(package_fixtures)
+                        generated = slips.monthly(package_fixtures, ai_decisions=ai_decisions)
                     else:
                         generated = []
 
@@ -1219,6 +1302,7 @@ else:
                     top_predictions = top_high_confidence_predictions(
                         package_fixtures,
                         top_limit,
+                        ai_decisions=ai_decisions,
                     )
 
                     render_markdown(f"""
