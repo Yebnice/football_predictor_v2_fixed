@@ -136,5 +136,28 @@ class TestApiFootballProvider(unittest.TestCase):
         self.assertEqual(form.goals_against, 1.0)
 
 
+    @patch("app.data_providers.httpx.Client.get")
+    def test_api_keys_rotate_after_error(self, mock_get):
+        class R:
+            def __init__(self, payload):
+                self.status_code = 200
+                self._payload = payload
+            def raise_for_status(self): pass
+            def json(self):
+                return self._payload
+
+        mock_get.side_effect = [
+            R({"errors": {"plan": "key 1 cannot access this season"}, "response": []}),
+            R({"errors": {}, "response": []}),
+        ]
+        p = ApiFootballProvider("", api_keys="key1,key2", cache_ttl_seconds=0)
+        start = datetime(2026, 9, 18, tzinfo=timezone.utc)
+        end = datetime(2026, 9, 19, tzinfo=timezone.utc)
+        rows = p.fixtures(start, end, league=39, season=2026)
+        self.assertEqual(rows, [])
+        self.assertEqual(mock_get.call_count, 2)
+        self.assertEqual(p.api_key, "key2")
+        self.assertEqual(p.key_count, 2)
+
 if __name__ == "__main__":
     unittest.main()
