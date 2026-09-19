@@ -67,6 +67,15 @@ class SlipTests(unittest.TestCase):
         }
         self.assertEqual(len(signatures), 5)
 
+    def test_major_league_matching_does_not_confuse_similar_names(self):
+        from app.slips import _matches_major
+
+        self.assertTrue(_matches_major("Italian Serie A 2026/27", "Italy — Serie A"))
+        self.assertTrue(_matches_major("Serie A", "Italy — Serie A"))
+        self.assertFalse(_matches_major("Brasileirão Serie A", "Italy — Serie A"))
+        self.assertTrue(_matches_major("Pro League", "Belgium — Jupiler Pro League"))
+        self.assertFalse(_matches_major("Challenger Pro League", "Belgium — Jupiler Pro League"))
+
     def test_generated_slips_never_contain_unknown_leagues(self):
         gen = SlipGenerator(FootballProbabilityEngine(), 0.5, "no-unknown")
         for slip in gen.daily(self.fixtures(80)):
