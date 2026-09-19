@@ -112,6 +112,95 @@ def _release_provider_resources():
     if callable(close):
         close()
 
+@app.get("/ml/status")
+def ml_status():
+    """Return the health of the background ML lifecycle without exposing model artifacts."""
+    active = store.get_active_ml_model()
+    drift = store.latest_ml_drift()
+    runs = store.list_ml_runs(limit=1)
+    metrics = {}
+    if active:
+        try:
+            import json
+            metrics = json.loads(active["metrics_json"] or "{}")
+        except Exception:
+            metrics = {}
+    return {
+        "model": {
+            "version": active["model_version"] if active else None,
+            "algorithm": active["algorithm"] if active else None,
+            "trained_at": active["trained_at"] if active else None,
+            "training_rows": active["training_rows"] if active else 0,
+            "validation_log_loss": metrics.get("log_loss"),
+            "calibration_ece": metrics.get("calibration_ece"),
+        },
+        "last_run": runs[0] if runs else None,
+        "drift": drift,
+    }
+
+
+@app.get("/ml/predictions")
+def ml_predictions(days: int = Query(default=1, ge=0, le=31), limit: int = Query(default=100, ge=1, le=1000)):
+    """Serve only predictions that passed the background AI publication gate."""
+    now = datetime.now(timezone.utc)
+    end = now + timedelta(days=1 if days == 0 else days)
+    rows = store.list_ml_predictions(
+        limit=limit,
+        statuses=("approved",),
+        kickoff_from_utc=now.isoformat(),
+        kickoff_to_utc=end.isoformat(),
+    )
+    return [
+        {
+            "fixture_id": row["fixture_id"],
+            "kickoff_utc": row["kickoff_utc"],
+            "league": row["league"],
+            "home_team": row["home_team"],
+            "away_team": row["away_team"],
+            "market": row["market"],
+            "selection": row["selection"],
+            "probability": row["probability"],
+            "fair_odds": row["fair_odds"],
+            "model_version": row["model_version"],
+            "ai_review_score": row["ai_review_score"],
+            "ai_rationale": row["ai_rationale"],
+            "risk_flags": row["risk_flags_json"],
+            "reviewers": row["reviewers_json"],
+            "status": row["status"],
+        }
+        for row in rows
+    ]
+
+
+@app.get("/ml/predict/{fixture_id}")
+def ml_predict_fixture(fixture_id: str):
+    """Return the stored AI-approved prediction for one fixture, if available."""
+    rows = store.list_ml_predictions(fixture_id=fixture_id, limit=100, statuses=("approved",))
+    if not rows:
+        raise HTTPException(404, "No AI-approved background prediction is available for this fixture.")
+    return {
+        "fixture_id": fixture_id,
+        "predictions": [
+            {
+                "kickoff_utc": row["kickoff_utc"],
+                "league": row["league"],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+                "market": row["market"],
+                "selection": row["selection"],
+                "probability": row["probability"],
+                "fair_odds": row["fair_odds"],
+                "model_version": row["model_version"],
+                "ai_review_score": row["ai_review_score"],
+                "ai_rationale": row["ai_rationale"],
+                "risk_flags": row["risk_flags_json"],
+                "reviewers": row["reviewers_json"],
+                "status": row["status"],
+            }
+            for row in rows
+        ],
+    }
+
 class PaymentRequest(BaseModel):
     reference: str
 
