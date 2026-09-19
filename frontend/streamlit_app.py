@@ -101,14 +101,13 @@ database_url = (
     _streamlit_secret("DATABASE_URL", "")
     or _streamlit_secret("DB_PATH", "")
 )
-# The Render FastAPI service is the single source of truth for background ML
-# state in production. The default matches the service name declared in
-# render.yaml; override with BACKEND_API_BASE_URL in Streamlit Cloud if the
-# deployed service uses a custom Render URL.
-backend_api_base_url = _streamlit_secret(
-    "BACKEND_API_BASE_URL",
-    getattr(settings, "backend_api_base_url", "https://football-predictor-api.onrender.com"),
-).rstrip("/")
+# GitHub Actions publishes the canonical background ML manifest after a
+# successful run. Streamlit reads this public, non-secret manifest directly;
+# no Render backend is required for prediction/slip generation.
+ml_manifest_url = _streamlit_secret(
+    "ML_MANIFEST_URL",
+    "https://raw.githubusercontent.com/Yebnice/football_predictor_v2_fixed/main/data/latest_ml_manifest.json",
+).strip()
 
 # Pydantic settings are initialized before Streamlit secrets are available to
 # this deployment path. Mirror the runtime secrets into the shared settings
@@ -1158,89 +1157,39 @@ except Exception as e:
     fixtures = []
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _fetch_background_ml_state(base_url: str):
-    """Read background ML state from the canonical FastAPI service."""
-    url = f"{base_url}/ml/status"
+def _fetch_ml_manifest(url: str) -> dict:
     response = httpx.get(url, timeout=15.0)
     response.raise_for_status()
-    return response.json()
-
-
-@st.cache_data(ttl=60, show_spinner=False)
-def _fetch_background_approved_predictions(base_url: str, days: int):
-    """Read only AI-approved predictions from the canonical FastAPI service."""
-    response = httpx.get(
-        f"{base_url}/ml/predictions",
-        params={"days": int(days), "limit": 1000},
-        timeout=15.0,
-    )
-    response.raise_for_status()
     payload = response.json()
-    return payload if isinstance(payload, list) else []
+    return payload if isinstance(payload, dict) else {}
 
 
 # Background ML status
-remote_ml_error = ""
+manifest_error = ""
 try:
-    remote_ml_status = _fetch_background_ml_state(backend_api_base_url)
-    remote_model = remote_ml_status.get("model") or {}
-    remote_last_run = remote_ml_status.get("last_run")
-    remote_drift = remote_ml_status.get("drift")
-    active_ml = {
-        "model_version": remote_model.get("version"),
-        "algorithm": remote_model.get("algorithm"),
-        "training_rows": remote_model.get("training_rows", 0),
-        "metrics_json": json.dumps({
-            "log_loss": remote_model.get("validation_log_loss"),
-            "calibration_ece": remote_model.get("calibration_ece"),
-        }),
-    } if remote_model.get("version") else None
-    latest_ml_run = remote_last_run
-    latest_ml_drift = remote_drift
+    ml_manifest = _fetch_ml_manifest(ml_manifest_url)
 except Exception as exc:
-    remote_ml_error = str(exc)
-    # Development fallback only. Production will display the backend error
-    # instead of silently reading a different local database.
-    if str(getattr(settings, "app_env", "")).strip().lower() == "production":
-        active_ml = None
-        latest_ml_drift = None
-        latest_ml_run = None
-    else:
-        active_ml = ml_store.get_active_ml_model()
-        latest_ml_drift = ml_store.latest_ml_drift()
-        latest_ml_run = (ml_store.list_ml_runs(limit=1) or [None])[0]
-ml_metrics = {}
-if active_ml:
-    try:
-        ml_metrics = json.loads(active_ml.get("metrics_json") or "{}")
-    except (TypeError, ValueError, json.JSONDecodeError):
-        ml_metrics = {}
+    ml_manifest = {}
+    manifest_error = str(exc)
 
+manifest_model = ml_manifest.get("model") or {}
+active_ml = (
+    {
+        "model_version": manifest_model.get("version"),
+        "algorithm": manifest_model.get("algorithm"),
+        "training_rows": manifest_model.get("training_rows", 0),
+    }
+    if manifest_model.get("version")
+    else None
+)
+latest_ml_run = ml_manifest.get("last_run")
+latest_ml_drift = ml_manifest.get("drift")
+ml_metrics = {
+    "log_loss": manifest_model.get("validation_log_loss"),
+    "calibration_ece": manifest_model.get("calibration_ece"),
+}
+approved_manifest_count = int(ml_manifest.get("approved_predictions_count") or 0)
 drift_label = "ALERT" if latest_ml_drift and bool(latest_ml_drift.get("alert")) else "OK"
-render_markdown(f"""
-<div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; margin: 1rem 0;">
-    <strong>🧠 Background ML pipeline</strong>
-    <span style="color: var(--text-secondary); margin-left: 0.5rem;">
-        {"AI-gated and ready" if active_ml else "Waiting for first successful training run"}
-    </span>
-    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:0.6rem;color:var(--text-secondary);font-size:0.86rem;">
-        <span>Model: {esc(active_ml.get("algorithm", "—") if active_ml else "—")}</span>
-        <span>Training rows: {esc(active_ml.get("training_rows", 0) if active_ml else 0)}</span>
-        <span>Validation log loss: {esc(f"{ml_metrics.get('log_loss'):.4f}" if ml_metrics.get('log_loss') is not None else "—")}</span>
-        <span>Calibration ECE: {esc(f"{ml_metrics.get('calibration_ece'):.4f}" if ml_metrics.get('calibration_ece') is not None else "—")}</span>
-        <span>Drift: {drift_label}</span>
-        <span>Last run: {esc((latest_ml_run or {}).get("status", "—"))}</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-if remote_ml_error and str(getattr(settings, "app_env", "")).strip().lower() == "production":
-    st.error(
-        "Background ML service is unavailable. The slip generator is intentionally "
-        "blocked from using a separate local database, so predictions cannot be "
-        "mixed across runtimes. Check BACKEND_API_BASE_URL/Render health."
-    )
-
 # Fixture pool overview
 render_markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin: 2rem 0 1rem 0;">
@@ -1310,43 +1259,45 @@ else:
         if st.button("🎯 Generate Prediction Package", type="primary", use_container_width=True):
             try:
                 with st.spinner("Loading background-approved predictions..."):
-                    # Build the slip pool directly from the canonical backend
-                    # API. This removes the last possible split-brain path between
-                    # GitHub Actions/Render and Streamlit Cloud.
+                    # Use the exact approved predictions published by the
+                    # GitHub Actions background pipeline. This is the canonical
+                    # source for Daily/Weekly/Monthly slips.
                     forecast_days = {"Daily": 1, "Weekly": 7, "Monthly": 31}.get(pkg, 1)
-                    try:
-                        approved_rows = _fetch_background_approved_predictions(
-                            backend_api_base_url,
-                            forecast_days,
-                        )
-                    except Exception as exc:
-                        if str(getattr(settings, "app_env", "")).strip().lower() == "production":
-                            raise RuntimeError(
-                                "The canonical background ML API could not be reached: "
-                                f"{exc}"
-                            ) from exc
-                        approved_rows = []
+                    approved_rows = list(ml_manifest.get("predictions") or [])
 
-                    # Daily normally means the next 24 hours. If fewer than 10
-                    # approved fixtures exist today, use the next available approved
-                    # fixtures from the same 31-day forecast horizon.
-                    if pkg == "Daily" and len(approved_rows) < 10:
-                        approved_rows = _fetch_background_approved_predictions(
-                            backend_api_base_url,
-                            31,
-                        )
+                    now_utc = datetime.now(timezone.utc)
 
-                    def _fixture_from_approved(row):
+                    def _row_kickoff(row):
                         try:
-                            kickoff = datetime.fromisoformat(
+                            return datetime.fromisoformat(
                                 str(row.get("kickoff_utc") or "").replace("Z", "+00:00")
                             ).astimezone(timezone.utc)
                         except Exception:
                             return None
+
+                    approved_rows = [
+                        row for row in approved_rows
+                        if _row_kickoff(row) is not None
+                        and now_utc <= _row_kickoff(row) <= now_utc + timedelta(days=forecast_days)
+                    ]
+
+                    # On low-fixture days, Daily uses the next available approved
+                    # fixtures from the same 31-day background forecast.
+                    if pkg == "Daily" and len(approved_rows) < 10:
+                        approved_rows = [
+                            row for row in (ml_manifest.get("predictions") or [])
+                            if _row_kickoff(row) is not None
+                            and now_utc <= _row_kickoff(row) <= now_utc + timedelta(days=31)
+                        ]
+
+                    def _fixture_from_approved(row):
+                        kickoff = _row_kickoff(row)
+                        if kickoff is None:
+                            return None
+                        fixture_id = str(row.get("fixture_id") or "").strip()
                         league = str(row.get("league") or "").strip()
                         home = str(row.get("home_team") or "").strip()
                         away = str(row.get("away_team") or "").strip()
-                        fixture_id = str(row.get("fixture_id") or "").strip()
                         if (
                             not fixture_id
                             or not league
