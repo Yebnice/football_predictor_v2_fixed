@@ -1826,11 +1826,11 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         bigballsdata_base_url=getattr(settings, "bigballsdata_base_url", "https://api.bigballsdata.com/v1"),
         provider_chain=settings.football_provider_chain,
         provider_mode=settings.football_provider_mode,
+        openfootball_base_url=getattr(settings, "openfootball_base_url", "https://raw.githubusercontent.com/openfootball/football.json/master"),
     )
 
 
 def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: float = 60.0,
-                    api_football_keys: str = "",
                     sofascore_browser_path: str | None = None,
                     livescorefootball_league: str | None = None,
                     odds_preferred_bookmaker: str = "",
@@ -1852,7 +1852,9 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     bigballsdata_api_key: str = "",
                     bigballsdata_base_url: str = "https://api.bigballsdata.com/v1",
                     provider_chain: str = "",
-                    provider_mode: str = "fallback") -> FootballProvider:
+                    provider_mode: str = "fallback",
+                    api_football_keys: str = "",
+                    openfootball_base_url: str = "https://raw.githubusercontent.com/openfootball/football.json/master") -> FootballProvider:
     """Build either one provider or a configurable provider chain.
 
     `name=auto` (or a comma-separated `provider_chain`) enables the router.
@@ -1862,7 +1864,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
     normalized = (name or "auto").lower().strip()
     chain_spec = provider_chain.strip() if provider_chain else (name if "," in name else "")
     if normalized in {"auto", "multi", "composite", "fallback"}:
-        chain_spec = provider_chain.strip() or "bigballsdata,isportsapi,football-data,api-football,allsportsapi,thesportsdb,livescorefootball,sofascore"
+        chain_spec = provider_chain.strip() or "openfootball,thesportsdb,livescorefootball,api-football"
     if chain_spec:
         from .multi_provider import CompositeFootballProvider
         providers: list[tuple[str, FootballProvider]] = []
@@ -1892,6 +1894,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     isports_base_url=isports_base_url,
                     bigballsdata_api_key=bigballsdata_api_key,
                     bigballsdata_base_url=bigballsdata_base_url,
+                    openfootball_base_url=openfootball_base_url,
                 )
             except ValueError as exc:
                 # Missing optional credentials should not make the entire chain
@@ -1954,6 +1957,11 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
             base_url=isports_base_url or "https://api.isportsapi.com",
             cache_ttl_seconds=min(cache_ttl_seconds, 10.0),
         )
+    if normalized in {"openfootball", "open-football", "football-json"}:
+        return OpenFootballProvider(
+            base_url=openfootball_base_url,
+            cache_ttl_seconds=max(cache_ttl_seconds, 300.0),
+        )
     if normalized in {"thesportsdb", "the-sports-db", "thesportsdb-v1"}:
         return TheSportsDBProvider(api_key=thesportsdb_api_key or "123",
                                    league_id=thesportsdb_league_id or "4328",
@@ -1966,6 +1974,277 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                                          default_league=livescorefootball_league,
                                          cache_ttl_seconds=cache_ttl_seconds)
     return GenericFootballRESTProvider(base_url, api_key)
+
+
+OPENFOOTBALL_LEAGUES: dict[str, str] = {
+    "39": "en.1",   # England Premier League
+    "140": "es.1",  # Spain LaLiga
+    "78": "de.1",   # Germany Bundesliga
+    "135": "it.1",  # Italy Serie A
+    "61": "fr.1",   # France Ligue 1
+    "88": "nl.1",   # Netherlands Eredivisie
+    "94": "pt.1",   # Portugal Primeira Liga
+}
+
+OPENFOOTBALL_LEAGUE_NAMES: dict[str, str] = {
+    "en.1": "Premier League",
+    "es.1": "LaLiga",
+    "de.1": "Bundesliga",
+    "it.1": "Serie A",
+    "fr.1": "Ligue 1",
+    "nl.1": "Eredivisie",
+    "pt.1": "Primeira Liga",
+}
+
+
+class OpenFootballProvider(FootballProvider):
+    """Free public-domain fixture/results provider backed by OpenFootball's
+    football.json datasets.
+
+    The dataset is served as raw JSON from GitHub and requires no API key.
+    Files are organized by football season and league code (for example
+    2026-27/en.1.json for the Premier League). This provider is intended for
+    fixtures, historical results and season-to-date form; it does not supply
+    odds, live events, lineups or discipline statistics.
+    """
+
+    def __init__(
+        self,
+        base_url: str = "https://raw.githubusercontent.com/openfootball/football.json/master",
+        timeout: float = 20.0,
+        cache_ttl_seconds: float = 300.0,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.client = httpx.Client(
+            timeout=timeout,
+            headers={"Accept": "application/json", "User-Agent": "football-predictor/1.0"},
+        )
+        self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
+
+    @staticmethod
+    def _season_label(start: datetime, season: int | str | None) -> str:
+        if season is None or str(season).strip() == "":
+            year = start.year if start.month >= 7 else start.year - 1
+            return f"{year}-{year + 1}"
+        text = str(season).strip()
+        if "-" in text:
+            parts = text.split("-", 1)
+            try:
+                return f"{int(parts[0])}-{int(parts[1])}"
+            except (TypeError, ValueError):
+                return text
+        try:
+            year = int(text)
+            return f"{year}-{year + 1}"
+        except (TypeError, ValueError):
+            return text
+
+    def _load_league(self, season_label: str, league_code: str) -> dict[str, Any]:
+        cache_key = f"openfootball:{season_label}:{league_code}"
+        if self._cache is not None:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+        url = f"{self.base_url}/{season_label}/{league_code}.json"
+        response = self.client.get(url)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("OpenFootball returned an unexpected JSON payload")
+        if self._cache is not None:
+            self._cache.set(cache_key, payload)
+        return payload
+
+    @staticmethod
+    def _parse_datetime(date_value: Any, time_value: Any = None) -> datetime:
+        raw_date = str(date_value or "").strip()
+        raw_time = str(time_value or "00:00").strip()
+        if not raw_date:
+            return datetime.now(timezone.utc)
+        try:
+            dt = datetime.fromisoformat(f"{raw_date}T{raw_time}")
+        except ValueError:
+            try:
+                dt = datetime.fromisoformat(raw_date)
+            except ValueError:
+                return datetime.now(timezone.utc)
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+    @staticmethod
+    def _score_from_raw(score: Any) -> tuple[int | None, int | None, str]:
+        # OpenFootball uses both {"ft": [h, a]} and compact [h, a] score forms.
+        if isinstance(score, dict):
+            ft = score.get("ft")
+            if isinstance(ft, (list, tuple)) and len(ft) >= 2:
+                try:
+                    return int(ft[0]), int(ft[1]), "FT"
+                except (TypeError, ValueError):
+                    pass
+            return None, None, "NS"
+        if isinstance(score, (list, tuple)) and len(score) >= 2:
+            try:
+                return int(score[0]), int(score[1]), "FT"
+            except (TypeError, ValueError):
+                pass
+        return None, None, "NS"
+
+    @staticmethod
+    def _form_from_matches(matches: list[dict[str, Any]], team: str, before: datetime, n: int = 5) -> TeamForm:
+        target = team.strip().casefold()
+        completed: list[tuple[datetime, int, int]] = []
+        for row in matches:
+            if not isinstance(row, dict):
+                continue
+            date = OpenFootballProvider._parse_datetime(row.get("date"), row.get("time"))
+            if date >= before:
+                continue
+            h = str(row.get("team1") or "").strip()
+            a = str(row.get("team2") or "").strip()
+            if h.casefold() != target and a.casefold() != target:
+                continue
+            hs, as_, status = OpenFootballProvider._score_from_raw(row.get("score"))
+            if hs is None or as_ is None or status != "FT":
+                continue
+            if h.casefold() == target:
+                completed.append((date, hs, as_))
+            else:
+                completed.append((date, as_, hs))
+        completed.sort(key=lambda x: x[0], reverse=True)
+        recent = completed[:n]
+        wins = draws = losses = 0
+        goals_for = goals_against = 0.0
+        for _, gf, ga in recent:
+            goals_for += gf
+            goals_against += ga
+            if gf > ga:
+                wins += 1
+            elif gf == ga:
+                draws += 1
+            else:
+                losses += 1
+        return TeamForm(
+            matches=len(recent),
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            goals_for=goals_for,
+            goals_against=goals_against,
+        )
+
+    def fixtures(self, start: datetime, end: datetime, live: bool = False,
+                 league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
+        if live:
+            raise ValueError("OpenFootball is a fixtures/results dataset and does not provide live scores")
+
+        if league is None:
+            codes = ["en.1"]
+        elif isinstance(league, int):
+            code = OPENFOOTBALL_LEAGUES.get(str(league))
+            codes = [code] if code else []
+        else:
+            tokens = [x.strip() for x in str(league).split(",") if x.strip()]
+            codes = [OPENFOOTBALL_LEAGUES.get(x, x if "." in x else "") for x in tokens]
+            codes = [x for x in codes if x]
+
+        season_label = self._season_label(start, season)
+        out: list[Fixture] = []
+        seen: set[str] = set()
+
+        for code in dict.fromkeys(codes):
+            payload = self._load_league(season_label, code)
+            matches = payload.get("matches") or []
+            for idx, row in enumerate(matches):
+                if not isinstance(row, dict):
+                    continue
+                fx_date = self._parse_datetime(row.get("date"), row.get("time"))
+                if not (start <= fx_date <= end):
+                    continue
+                home = str(row.get("team1") or "").strip()
+                away = str(row.get("team2") or "").strip()
+                if not home or not away:
+                    continue
+                home_score, away_score, status = self._score_from_raw(row.get("score"))
+                if status == "NS" and fx_date < datetime.now(timezone.utc):
+                    # Past fixtures without scores remain unplayed/unknown rather
+                    # than fabricating a result.
+                    status = "NS"
+                fixture_id = f"openfootball-{season_label.replace('-', '_')}-{code}-{idx}"
+                if fixture_id in seen:
+                    continue
+                seen.add(fixture_id)
+                fx = Fixture(
+                    fixture_id=fixture_id,
+                    date=fx_date,
+                    league=str(payload.get("name") or OPENFOOTBALL_LEAGUE_NAMES.get(code, code)),
+                    season=season_label,
+                    home_team=home,
+                    away_team=away,
+                    status=status,
+                    home_score=home_score,
+                    away_score=away_score,
+                    home_form=self._form_from_matches(matches, home, fx_date, n=5),
+                    away_form=self._form_from_matches(matches, away, fx_date, n=5),
+                    stats={
+                        "source": "openfootball",
+                        "round": row.get("round"),
+                        "league_code": code,
+                        "dataset_url": f"{self.base_url}/{season_label}/{code}.json",
+                    },
+                )
+                out.append(fx)
+
+        out.sort(key=lambda x: x.date)
+        return out
+
+    def fixture_by_id(self, fixture_id: str) -> Fixture | None:
+        prefix = "openfootball-"
+        if not fixture_id.startswith(prefix):
+            return None
+        rest = fixture_id[len(prefix):]
+        parts = rest.rsplit("-", 2)
+        if len(parts) != 3:
+            return None
+        season_slug, code, idx_text = parts
+        season_label = season_slug.replace("_", "-")
+        try:
+            idx = int(idx_text)
+        except ValueError:
+            return None
+        payload = self._load_league(season_label, code)
+        matches = payload.get("matches") or []
+        if idx < 0 or idx >= len(matches):
+            return None
+        row = matches[idx]
+        if not isinstance(row, dict):
+            return None
+        fx_date = self._parse_datetime(row.get("date"), row.get("time"))
+        home = str(row.get("team1") or "").strip()
+        away = str(row.get("team2") or "").strip()
+        if not home or not away:
+            return None
+        home_score, away_score, status = self._score_from_raw(row.get("score"))
+        return Fixture(
+            fixture_id=fixture_id,
+            date=fx_date,
+            league=str(payload.get("name") or OPENFOOTBALL_LEAGUE_NAMES.get(code, code)),
+            season=season_label,
+            home_team=home,
+            away_team=away,
+            status=status,
+            home_score=home_score,
+            away_score=away_score,
+            home_form=self._form_from_matches(matches, home, fx_date, n=5),
+            away_form=self._form_from_matches(matches, away, fx_date, n=5),
+            stats={
+                "source": "openfootball",
+                "round": row.get("round"),
+                "league_code": code,
+                "dataset_url": f"{self.base_url}/{season_label}/{code}.json",
+            },
+        )
+
+    def close(self) -> None:
+        self.client.close()
 
 
 class LivescoreFootballProvider(FootballProvider):
