@@ -32,9 +32,9 @@ class GeminiExplainer:
             model=self.model,
             contents=prompt,
             config=types.GenerateContentConfig(
-                max_output_tokens=1200,
+                max_output_tokens=900,
                 thinking_config=types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.MEDIUM
+                    thinking_level=types.ThinkingLevel.LOW
                 ),
             ),
         )
