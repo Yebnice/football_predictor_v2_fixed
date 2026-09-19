@@ -737,36 +737,13 @@ else:
         help="Gemini Flash uses Google's current stable Flash model. Both runs the two explainers independently so you can compare their explanations."
     )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if gemini_ok:
-            if st.button("✅ Test Gemini Flash", key="test_gemini_connection", use_container_width=True):
-                try:
-                    result = gemini_explainer.explain(
-                        {"home_team": "Test FC", "away_team": "Test United"},
-                        [{"market": "Total Goals", "selection": "Over 2.5", "probability": 0.50}],
-                    )
-                    st.success("Gemini Flash connection is working.")
-                    st.caption(result[:300])
-                except Exception as exc:
-                    st.error(f"Gemini connection failed: {exc}")
-        else:
-            st.caption("Gemini: add GEMINI_API_KEY in Streamlit Cloud Secrets.")
-
-    with c2:
-        if groq_ok:
-            if st.button("✅ Test Groq", key="test_groq_connection", use_container_width=True):
-                try:
-                    result = explainer.explain(
-                        {"home_team": "Test FC", "away_team": "Test United"},
-                        [{"market": "Total Goals", "selection": "Over 2.5", "probability": 0.50}],
-                    )
-                    st.success("Groq connection is working.")
-                    st.caption(result[:300])
-                except Exception as exc:
-                    st.error(f"Groq connection failed: {exc}")
-        else:
-            st.caption("Groq: add GROQ_API_KEY in Streamlit Cloud Secrets.")
+    render_markdown("""
+    <div style="display:flex;align-items:center;gap:8px;margin:0.4rem 0 1rem 0;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success-color);"></span>
+        <strong>LIVE AI MODE</strong>
+        <span style="color:var(--text-secondary);">Gemini and Groq use real selected-match data when invoked below.</span>
+    </div>
+    """, unsafe_allow_html=True)
 
     fixture_options = [f"{fx.home_team} vs {fx.away_team} ({fx.fixture_id})" for fx in fixtures]
     selected_match = st.selectbox("Select match to analyze", fixture_options, key="match_explanation")
@@ -863,6 +840,32 @@ else:
                     st.dataframe(pd.DataFrame(h2h_rows), use_container_width=True, hide_index=True)
                 elif home_id and away_id:
                     st.caption("Head-to-head history is not available from the configured data provider for this fixture.")
+
+                render_markdown("#### 🟢 Live AI controls", unsafe_allow_html=False)
+                live_c1, live_c2 = st.columns(2)
+                if live_c1.button("🟢 Run Live Gemini", key=f"live_gemini_{fixture_id}", use_container_width=True):
+                    if not gemini_ok:
+                        st.error("Gemini is not configured. Add GEMINI_API_KEY in Streamlit Cloud Secrets.")
+                    else:
+                        with st.spinner("Gemini is analyzing the selected match..."):
+                            try:
+                                live_text = gemini_explainer.explain(detailed_fx.__dict__, [m.__dict__ for m in ms[:10]])
+                                st.success("Gemini live analysis completed.")
+                                st.markdown(live_text)
+                            except Exception as exc:
+                                st.error(f"Gemini live analysis failed: {exc}")
+
+                if live_c2.button("🟢 Run Live Groq", key=f"live_groq_{fixture_id}", use_container_width=True):
+                    if not groq_ok:
+                        st.error("Groq is not configured. Add GROQ_API_KEY in Streamlit Cloud Secrets.")
+                    else:
+                        with st.spinner("Groq is analyzing the selected match..."):
+                            try:
+                                live_text = explainer.explain(detailed_fx.__dict__, [m.__dict__ for m in ms[:10]])
+                                st.success("Groq live analysis completed.")
+                                st.markdown(live_text)
+                            except Exception as exc:
+                                st.error(f"Groq live analysis failed: {exc}")
 
                 render_markdown("#### 📈 Top model markets", unsafe_allow_html=False)
                 market_rows = [{
