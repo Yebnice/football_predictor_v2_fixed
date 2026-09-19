@@ -110,6 +110,7 @@ days after creation, which defeats the point.)*
    AUTH_JWT_SECRET = "PASTE_A_FRESH_RANDOM_VALUE_HERE"
    RNG_SALT = "PASTE_A_DIFFERENT_FRESH_RANDOM_VALUE_HERE"
    GROQ_API_KEY = ""
+   BACKEND_API_BASE_URL = "https://football-predictor-api.onrender.com"
    ```
 
    Replace the two secret placeholders with freshly generated values. Because
