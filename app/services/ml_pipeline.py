@@ -940,8 +940,8 @@ def run_background_pipeline(
                 }
                 agent_run = prediction_agent.review_fixtures(
                     forecast_fx,
-                    candidate_limit=min(100, len(forecast_fx)),
-                    deep_evidence_limit=min(35, len(forecast_fx)),
+                    candidate_limit=min(60, len(forecast_fx)),
+                    deep_evidence_limit=min(10, len(forecast_fx)),
                     background_context=ai_context,
                 )
                 for fx in forecast_fx:
@@ -1035,7 +1035,8 @@ def create_runtime_components() -> tuple[Any, Store, FootballProbabilityEngine, 
         gemini_model=settings.gemini_model,
         groq_api_key=settings.groq_api_key,
         groq_model=settings.groq_model,
-        batch_size=30,
+        # Keep each AI review request small enough for free-tier input limits.
+        batch_size=4,
     )
     return provider, store, engine, agent
 
