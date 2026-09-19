@@ -546,6 +546,31 @@ class TestProviderRouter(unittest.TestCase):
         self.assertEqual(rows[0].stats["provider"], "one")
 
 
+    def test_merge_prefers_completed_score_over_fixture_only_record(self):
+        kickoff = datetime(2026, 9, 10, 15, tzinfo=timezone.utc)
+        fixture_only = Fixture(
+            "fixture-only", kickoff, "Premier League", "2026",
+            "Arsenal", "Chelsea", status="scheduled",
+        )
+        completed = Fixture(
+            "completed", kickoff, "Premier League", "2026",
+            "Arsenal", "Chelsea", status="finished",
+            home_score=2, away_score=1,
+        )
+        first, second = Mock(), Mock()
+        first.fixtures.return_value = [fixture_only]
+        second.fixtures.return_value = [completed]
+        p = CompositeFootballProvider([("first", first), ("second", second)], mode="merge")
+
+        rows = p.fixtures(kickoff, kickoff + timedelta(hours=1))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].fixture_id, "completed")
+        self.assertEqual(rows[0].home_score, 2)
+        self.assertEqual(rows[0].away_score, 1)
+        self.assertEqual(rows[0].stats["provider"], "second")
+
+
 
 class TestProviderSettingsWiring(unittest.TestCase):
     @patch("app.data_providers.httpx.Client.get")
