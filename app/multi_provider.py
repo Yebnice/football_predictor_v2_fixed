@@ -157,6 +157,7 @@ class CompositeFootballProvider(FootballProvider):
                 "isportsapi", "isports",
                 "thesportsdb", "the-sports-db", "thesportsdb-v1",
                 "openfootball", "open-football", "football-json",
+                "allsportsapi", "all-sports-api", "allsports",
                 "bsd", "bzzoiro", "bzzoiro-sports-data",
             }:
                 continue
