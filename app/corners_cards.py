@@ -74,6 +74,47 @@ class CornersCardsEngine:
     def _fair(p: float) -> float | None:
         return round(1 / p, 4) if p > 0 else None
 
+    @staticmethod
+    def _bsd_corner_pair(fx: Fixture, line: float) -> tuple[float, float] | None:
+        """Return BSD consensus over/under prices for a total-corners line."""
+        odds = fx.odds or {}
+        try:
+            over = float(odds.get(f"corner_over_{line:g}"))
+            under = float(odds.get(f"corner_under_{line:g}"))
+        except (TypeError, ValueError):
+            return None
+        if over <= 1.0 or under <= 1.0:
+            return None
+        return over, under
+
+    def _market_mp(
+        self,
+        market: str,
+        selection: str,
+        market_price: float,
+        paired_price: float,
+        line: float,
+    ) -> MarketPrediction:
+        inv_this = 1.0 / market_price
+        inv_other = 1.0 / paired_price
+        total = inv_this + inv_other
+        p = inv_this / total if total > 0 else 0.5
+        return MarketPrediction(
+            market=market,
+            selection=selection,
+            probability=round(p, 4),
+            fair_odds=self._fair(p),
+            market_odds=round(market_price, 4),
+            edge=None,
+            confidence=round(p, 4),
+            metadata={
+                "estimated": False,
+                "source": "BSD consensus",
+                "basis": "real BSD total-corners market, margin-normalized implied probability",
+                "line": line,
+            },
+        )
+
     def _mp(self, market: str, selection: str, p: float, expected: float) -> MarketPrediction:
         p = max(0.0001, min(0.9999, p))
         return MarketPrediction(
@@ -93,9 +134,15 @@ class CornersCardsEngine:
         preds: list[MarketPrediction] = []
 
         for line in CORNER_LINES:
-            over = _over_probability(total_corners_lambda, line)
-            preds.append(self._mp("Total Corners", f"Over {line}", over, total_corners_lambda))
-            preds.append(self._mp("Total Corners", f"Under {line}", 1 - over, total_corners_lambda))
+            pair = self._bsd_corner_pair(fx, line)
+            if pair:
+                over_price, under_price = pair
+                preds.append(self._market_mp("Total Corners", f"Over {line}", over_price, under_price, line))
+                preds.append(self._market_mp("Total Corners", f"Under {line}", under_price, over_price, line))
+            else:
+                over = _over_probability(total_corners_lambda, line)
+                preds.append(self._mp("Total Corners", f"Over {line}", over, total_corners_lambda))
+                preds.append(self._mp("Total Corners", f"Under {line}", 1 - over, total_corners_lambda))
 
         for line in CARD_LINES:
             over = _over_probability(total_cards_lambda, line)
