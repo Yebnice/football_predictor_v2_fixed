@@ -1282,8 +1282,6 @@ class ApiFootballProvider(FootballProvider):
                  preferred_bookmaker: str = "", enrich_list_fixtures: bool = False,
                  fetch_discipline_stats: bool = False, default_leagues: str = "",
                  use_standings_form: bool = False):
-        if not api_key:
-            raise ValueError("API_FOOTBALL_KEY is required when FOOTBALL_PROVIDER=api-football")
         self.base_url = base_url.rstrip("/")
         # Accept both the legacy single key and API_FOOTBALL_KEYS=key1,key2,...
         # Rotate to the next key whenever a request fails, including free-plan
@@ -1310,6 +1308,11 @@ class ApiFootballProvider(FootballProvider):
         # match* (not per team), so a 5-match lookback costs ~5-10 calls per team
         # — expensive even for a single fixture_by_id() lookup, let alone a list.
         self.fetch_discipline_stats = fetch_discipline_stats
+        if not self.api_keys:
+            raise ValueError(
+                "API_FOOTBALL_KEY or API_FOOTBALL_KEYS is required when API-Football is enabled"
+            )
+        self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
         self.client = httpx.Client(
             base_url=self.base_url,
             headers={"x-apisports-key": self.api_key, "Accept": "application/json"},
@@ -1328,7 +1331,6 @@ class ApiFootballProvider(FootballProvider):
     @property
     def key_count(self) -> int:
         return len(self.api_keys)
-        self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
 
     def _get(self, path: str, params: dict[str, Any] | None = None, cacheable: bool = True) -> dict[str, Any]:
         params = params or {}
