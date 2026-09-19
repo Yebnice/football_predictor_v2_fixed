@@ -801,6 +801,7 @@ class BSDProvider(FootballProvider):
         "61": "Ligue 1",
         "88": "Eredivisie",
         "94": "Primeira Liga",
+        "144": "Jupiler Pro League",
         "218": "Austrian Bundesliga",
         "71": "Brasileirão Serie A",
         "253": "MLS",
