@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
-    # Canonical FastAPI endpoint used by Streamlit for background ML state.
-    backend_api_base_url: str = "https://football-predictor-api.onrender.com"
+    # Public, non-secret manifest published by GitHub Actions for Streamlit.
+    ml_manifest_url: str = "https://raw.githubusercontent.com/Yebnice/football_predictor_v2_fixed/main/data/latest_ml_manifest.json"
     allsportsapi_api_key: str = ""
     allsportsapi_base_url: str = "https://apiv2.allsportsapi.com/football/"
     isports_api_key: str = ""
