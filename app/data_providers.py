@@ -2305,11 +2305,12 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
     # Settings default. In auto/fallback mode, always preserve the configured
     # free-first providers and then retain any user-specified providers.
     auto_mode = str(provider_name or "").strip().lower() in {"auto", "multi", "composite", "fallback"}
-    if auto_mode or provider_mode == "fallback":
+    legacy_api_football = str(provider_name or "").strip().lower() in {"api-football", "api_football", "api-sports", "apisports"}
+    if auto_mode or (legacy_api_football and provider_mode == "fallback"):
         existing = [x.strip() for x in str(provider_chain or "").split(",") if x.strip()]
         fallback_first = ["bsd", "bigballsdata", "openfootball", "thesportsdb", "livescorefootball"]
         provider_chain = ",".join(dict.fromkeys(fallback_first + existing))
-        if str(provider_name or "").strip().lower() in {"api-football", "api_football", "api-sports", "apisports"}:
+        if legacy_api_football:
             provider_name = "auto"
 
     return build_provider(
