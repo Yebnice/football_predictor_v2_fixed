@@ -18,6 +18,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ml-daily
+  cancel-in-progress: true
+
 jobs:
   daily:
     runs-on: ubuntu-latest
@@ -64,8 +68,10 @@ jobs:
           GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+        timeout-minutes: 10
         run: python scripts/run_ml_pipeline.py --mode daily
       - name: Publish canonical ML manifest
+        if: always()
         env:
           PYTHONPATH: ${{ github.workspace }}
           DB_PATH: ${{ secrets.DB_PATH }}
