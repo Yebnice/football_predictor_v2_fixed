@@ -72,6 +72,16 @@ API_FOOTBALL_TO_FOOTBALL_DATA: dict[str, str] = {
     "71": "BSA",   # Brazil Serie A
 }
 
+API_FOOTBALL_TO_OPENFOOTBALL: dict[str, str] = {
+    "39": "en.1",
+    "140": "es.1",
+    "78": "de.1",
+    "135": "it.1",
+    "61": "fr.1",
+    "88": "nl.1",
+    "94": "pt.1",
+}
+
 API_FOOTBALL_TO_BIGBALLS: dict[str, str] = {
     "39": "epl",
     "140": "laliga",
@@ -146,6 +156,7 @@ class CompositeFootballProvider(FootballProvider):
                 "football-data", "football-data-org", "football-data.org",
                 "isportsapi", "isports",
                 "thesportsdb", "the-sports-db", "thesportsdb-v1",
+                "openfootball", "open-football", "football-json",
             }:
                 continue
             try:
@@ -182,6 +193,17 @@ class CompositeFootballProvider(FootballProvider):
                     # currently expose a league catalogue, so skip numeric-league
                     # translation here and allow the next mapped provider to try.
                     rows = []
+                elif name in {"openfootball", "open-football", "football-json"} and api_league_selection:
+                    tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
+                    translated = [API_FOOTBALL_TO_OPENFOOTBALL[token] for token in tokens if token in API_FOOTBALL_TO_OPENFOOTBALL]
+                    rows = []
+                    provider_season = season
+                    for code in dict.fromkeys(translated):
+                        rows.extend(
+                            provider.fixtures(
+                                start, end, live=live, league=code, season=provider_season
+                            )
+                        )
                 elif name in {"thesportsdb", "the-sports-db", "thesportsdb-v1"} and api_league_selection:
                     # Translate the app's API-Football numeric league selection
                     # into TheSportsDB's league namespace and query each selected
