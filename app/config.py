@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # `auto` uses the configured provider chain and gracefully skips providers
     # whose credentials are absent. No synthetic data provider is included.
     football_provider: str = "auto"
-    football_provider_chain: str = "bigballsdata,isportsapi,football-data,api-football,allsportsapi,thesportsdb,livescorefootball,sofascore"
+    football_provider_chain: str = "thesportsdb,livescorefootball,api-football"
     football_provider_mode: str = "fallback"
     football_api_base_url: str = ""
     football_api_key: str = ""
