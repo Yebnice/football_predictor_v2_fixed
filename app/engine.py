@@ -26,7 +26,7 @@ TIP_TEAM_GOALS_LINES = {"Over 1.5", "Under 1.5"}
 # Upper bound on P(event) for a shortlisted tip. Excluding near-certainties
 # (P > this) keeps the shortlist to genuinely selective picks instead of
 # restating "this team probably won't score 6".
-MAX_TIP_PROBABILITY = 0.75
+MAX_TIP_PROBABILITY = 0.90
 
 # Dixon-Coles (1997) low-score correlation. Independent Poisson underprices
 # 0-0/1-1 and overprices 1-0/0-1 relative to observed football results; this
@@ -160,7 +160,9 @@ class FootballProbabilityEngine:
 
     def shortlist(self, fx: Fixture, min_conf: float = 0.60, top_n: int = 3,
                   max_conf: float = MAX_TIP_PROBABILITY) -> list[MarketPrediction]:
-        """Publishable tips only: restricted to TIP_MARKETS, bounded to
+        """Publishable tips: inspect all supported standard markets, then rank the
+        probability-valid candidates. A higher ceiling prevents a single low-risk
+        total-goals line from crowding every fixture out of the published market set.
         [min_conf, max_conf] so we don't advertise a >90% "tip" that's just
         the shape of a truncated Poisson grid, and ranked by edge vs the
         bookmaker's price when odds exist (else by probability, still within
