@@ -23,6 +23,8 @@ class GroqExplainer:
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
-            max_tokens=500,
+            max_tokens=450,
+            reasoning_effort="low",
+            include_reasoning=False,
         )
         return r.choices[0].message.content or "No explanation generated."
