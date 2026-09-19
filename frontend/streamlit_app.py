@@ -612,15 +612,19 @@ else:
             confidence_class = "status-low"
             confidence_label = "LOW"
 
+        def _outcome_card(label: str) -> str:
+            item = outcome_markets.get(label)
+            probability = f"{item.probability:.1%}" if item else "—"
+            return (
+                '<div style="flex:1;text-align:center;padding:0.65rem 0.4rem;'
+                'background:var(--background-card-alt);border-radius:8px;">'
+                f'<div style="color:var(--text-secondary);font-size:0.78rem;">{esc(label)}</div>'
+                f'<div style="color:var(--text-primary);font-size:1.05rem;font-weight:700;">{probability}</div>'
+                '</div>'
+            )
+
         outcome_html = "".join(
-            f'<div style="flex:1;text-align:center;padding:0.65rem 0.4rem;background:var(--background-card-alt);border-radius:8px;">'
-            f'<div style="color:var(--text-secondary);font-size:0.78rem;">{esc(label)}</div>'
-            f'<div style="color:var(--text-primary);font-size:1.05rem;font-weight:700;">'
-            f'{outcome_markets[label].probability:.1%}' if label in outcome_markets else
-            f'<div style="flex:1;text-align:center;padding:0.65rem 0.4rem;background:var(--background-card-alt);border-radius:8px;">'
-            f'<div style="color:var(--text-secondary);font-size:0.78rem;">{esc(label)}</div>'
-            f'<div style="color:var(--text-primary);font-size:1.05rem;font-weight:700;">—'
-            f'</div></div>'
+            _outcome_card(label)
             for label in ["Home Win", "Draw", "Away Win"]
         )
 
