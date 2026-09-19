@@ -28,14 +28,22 @@ class GeminiExplainer:
 
         from google.genai import types
 
+        config_kwargs: dict[str, Any] = {"max_output_tokens": 900}
+        # The Google GenAI SDK has changed the ThinkingLevel enum across
+        # releases. Use LOW when that enum exists, otherwise omit the optional
+        # thinking setting so text generation remains compatible.
+        try:
+            low_level = getattr(types.ThinkingLevel, "LOW", None)
+            if low_level is not None:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(
+                    thinking_level=low_level
+                )
+        except (AttributeError, TypeError):
+            pass
+
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                max_output_tokens=900,
-                thinking_config=types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.LOW
-                ),
-            ),
+            config=types.GenerateContentConfig(**config_kwargs),
         )
         return (response.text or "").strip() or "No Gemini explanation generated."
