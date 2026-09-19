@@ -13,6 +13,7 @@ google-genai==2.24.0
 PyJWT==2.14.0
 plotly==5.24.1
 psycopg2-binary==2.9.10
-# scipy / scikit-learn removed: nothing in this codebase imports them today.
-# Reinstate if/when the "optional ML blend hook" mentioned in the README is implemented.
+# Background ML pipeline uses scikit-learn's trained Poisson regression, log-loss,
+# and preprocessing metrics before the AI publication gate.
+scikit-learn==1.9.1
 reportlab>=4.0,<5.0
