@@ -185,7 +185,7 @@ class AIPredictionAgent:
         gemini_model: str = "gemini-3.8-flash",
         groq_api_key: str = "",
         groq_model: str = "openai/gpt-oss-120b",
-        batch_size: int = 30,
+        batch_size: int = 4,
     ):
         self.engine = engine
         self.provider = provider
@@ -335,6 +335,28 @@ class AIPredictionAgent:
 
     @staticmethod
     def _prompt(records: list[dict[str, Any]], background_context: dict[str, Any] | None = None) -> str:
+        # Keep every model request comfortably below provider input-token limits.
+        # Deep provider evidence is useful, but the deterministic candidate data
+        # and fixture identity are the authoritative review inputs.
+        compact_records: list[dict[str, Any]] = []
+        for row in records:
+            compact_records.append({
+                "fixture": {
+                    "fixture_id": row["fixture"].get("fixture_id"),
+                    "kickoff_utc": row["fixture"].get("kickoff_utc"),
+                    "league": row["fixture"].get("league"),
+                    "home_team": row["fixture"].get("home_team"),
+                    "away_team": row["fixture"].get("away_team"),
+                    "status": row["fixture"].get("status"),
+                    "home_xg": row["fixture"].get("home_xg"),
+                    "away_xg": row["fixture"].get("away_xg"),
+                    "home_form": row["fixture"].get("home_form"),
+                    "away_form": row["fixture"].get("away_form"),
+                    "odds_1x2": row["fixture"].get("odds_1x2"),
+                },
+                "candidates": row["candidates"],
+                "deep_evidence": _compact_provider_payload(row.get("deep_evidence") or {}, 550),
+            })
         context_text = (
             "\n\nBACKGROUND PIPELINE CONTEXT (factual, computed before your review):\n"
             + json.dumps(background_context, ensure_ascii=False, default=str)
@@ -342,28 +364,24 @@ class AIPredictionAgent:
         )
         return (
             "You are an AI football prediction review agent. Review the supplied "
-            "fixtures using only the deterministic model candidates and the factual "
-            "provider evidence included below. Your job is to approve or reject one "
-            "existing candidate per fixture. You are NOT allowed to invent a market, "
-            "selection, fixture, injury, lineup, odds value, or probability. "
-            "candidate_index must point to an item in that fixture's candidate list. "
-            "A review_score is your confidence in the review decision, NOT the event "
-            "probability. The statistical model probability is the authoritative "
-            "quantitative input. Prefer rejection over a speculative approval when "
-            "the evidence contradicts the candidate, but do not reject solely because "
-            "optional deep evidence is unavailable; instead record that limitation in "
-            "risk_flags. Return one decision for every fixture presented.\n"
-            "Treat the background pipeline context as diagnostic evidence, not as an automatic "
-            "rejection gate. Calibration, log loss, drift, and data coverage must not "
-            "cause you to reject every fixture merely because a metric is imperfect. "
-            "For each fixture, start from the supplied deterministic candidates. If a "
-            "candidate is within the allowed model-probability range and there is no "
-            "direct factual contradiction in the supplied evidence, it is eligible for "
-            "approval. Reject only when the candidate is contradicted by the supplied "
-            "evidence, is clearly invalid, or the fixture data are materially unreliable. "
-            "Missing optional deep evidence alone is NOT a rejection reason. Keep any "
-            "caution in risk_flags. Do not change the model probability or invent facts.\n\n"
-            + json.dumps(records, ensure_ascii=False, default=str)
+            "fixtures using only the deterministic model candidates and factual "
+            "provider evidence below. Approve or reject one existing candidate per "
+            "fixture. Never invent a market, selection, fixture, injury, lineup, "
+            "odds, or probability. candidate_index must point to an item in that "
+            "fixture's candidate list. review_score is confidence in the review "
+            "decision, not event probability. The statistical model probability is "
+            "the authoritative quantitative input. Return one decision for every "
+            "fixture presented.\n"
+            "Treat background metrics as diagnostic evidence, not an automatic "
+            "rejection gate. An imperfect calibration/log-loss/drift metric does not "
+            "by itself invalidate every fixture. If a supplied candidate is within "
+            "the allowed probability range and the supplied evidence does not "
+            "contradict it, it is eligible for approval. Reject only when the "
+            "candidate is contradicted, invalid, or the fixture data are materially "
+            "unreliable. Missing optional deep evidence alone is not a rejection "
+            "reason; record that limitation in risk_flags. Do not alter model "
+            "probabilities and do not invent facts.\n\n"
+            + json.dumps(compact_records, ensure_ascii=False, default=str)
             + context_text
         )
 
@@ -382,10 +400,23 @@ class AIPredictionAgent:
             return []
         from google.genai import types
 
+        # google-genai 2.24 validates a narrower schema shape than the
+        # generic JSON Schema object used by Groq. Strip unsupported schema
+        # keywords before handing it to Gemini.
+        gemini_schema = json.loads(json.dumps(DECISION_SCHEMA))
+        def strip_unsupported(value: Any) -> None:
+            if isinstance(value, dict):
+                value.pop("additionalProperties", None)
+                for child in value.values():
+                    strip_unsupported(child)
+            elif isinstance(value, list):
+                for child in value:
+                    strip_unsupported(child)
+        strip_unsupported(gemini_schema)
         config_kwargs: dict[str, Any] = {
-            "max_output_tokens": 6000,
+            "max_output_tokens": 2500,
             "response_mime_type": "application/json",
-            "response_schema": DECISION_SCHEMA,
+            "response_schema": gemini_schema,
         }
         try:
             medium_level = getattr(types.ThinkingLevel, "MEDIUM", "medium")
@@ -433,7 +464,7 @@ class AIPredictionAgent:
             ],
             "response_format": response_format,
             "temperature": 0.1,
-            "max_tokens": 6000,
+            "max_tokens": 2500,
         }
         # reasoning_effort is documented for GPT-OSS models. Do not send it
         # to arbitrary custom Groq model IDs configured by a deployment.
