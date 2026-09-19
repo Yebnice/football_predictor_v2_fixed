@@ -28,16 +28,18 @@ class GeminiExplainer:
 
         from google.genai import types
 
-        config_kwargs: dict[str, Any] = {"max_output_tokens": 900}
-        # The Google GenAI SDK has changed the ThinkingLevel enum across
-        # releases. Use LOW when that enum exists, otherwise omit the optional
-        # thinking setting so text generation remains compatible.
+        config_kwargs: dict[str, Any] = {"max_output_tokens": 1200}
+        # Gemini 3 supports low/medium/high thinking levels. Prefer the SDK's
+        # MEDIUM enum when present, with the documented string fallback so the
+        # code also works across SDK versions that do not expose that enum member.
         try:
-            low_level = getattr(types.ThinkingLevel, "LOW", None)
-            if low_level is not None:
-                config_kwargs["thinking_config"] = types.ThinkingConfig(
-                    thinking_level=low_level
-                )
+            medium_level = getattr(types.ThinkingLevel, "MEDIUM", "medium")
+        except AttributeError:
+            medium_level = "medium"
+        try:
+            config_kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_level=medium_level
+            )
         except (AttributeError, TypeError):
             pass
 
