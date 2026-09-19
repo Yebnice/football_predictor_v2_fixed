@@ -590,7 +590,30 @@ def _fetch_all_leagues_with_majors(start_dt, end_dt, season, minimum, priority_i
             season=season,
         )
 
-    rows = list(_provider_fetch(None) or [])
+    rows: list = []
+
+    # Deep world-football discovery: when API-Football is configured, use its
+    # global fixtures feed first. This is deliberately separate from the public
+    # four-league default list, so Daily/Weekly/Monthly packages can discover
+    # competitions worldwide.
+    for provider_name, world_provider in getattr(provider, "providers", []):
+        if provider_name in {"api-football", "api-sports", "apisports"}:
+            global_fetch = getattr(world_provider, "global_fixtures", None)
+            if callable(global_fetch):
+                try:
+                    world_rows = list(global_fetch(start_dt, end_dt) or [])
+                    rows.extend(world_rows)
+                except Exception:
+                    pass
+            break
+
+    # Existing broad free-provider discovery remains as a fallback/source of
+    # additional fixtures when global discovery is unavailable or sparse.
+    if len(rows) < minimum:
+        try:
+            rows.extend(list(_provider_fetch(None) or []))
+        except Exception:
+            pass
 
     def _league_text(fx):
         return " ".join(str(getattr(fx, "league", "") or "").casefold().replace("-", " ").split())
