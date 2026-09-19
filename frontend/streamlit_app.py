@@ -407,6 +407,41 @@ def _enrich_bigballs_forms(fixtures, selected_league_ids):
     return fixtures
 
 
+def fetch_slip_fixtures(start, end, period):
+    """Fetch an all-league fixture pool specifically for the 5-slip package."""
+    targets = {
+        "Daily": 75,
+        "Weekly": 150,
+        "Monthly": 300,
+    }
+    target = targets.get(period)
+    if target is None:
+        return []
+    pool_start = start.astimezone(timezone.utc)
+    pool_end = end.astimezone(timezone.utc)
+    season = _football_season_for(pool_start)
+
+    if hasattr(provider, "providers"):
+        rows = provider.fixtures(
+            pool_start,
+            pool_end,
+            league=None,
+            season=season,
+            minimum=target,
+        )
+    else:
+        rows = provider.fixtures(
+            pool_start,
+            pool_end,
+            league=None,
+            season=season,
+        )
+    # The slip package deliberately ignores the sidebar's selected-league
+    # filter: its product rule is to use all leagues available from the
+    # configured provider chain.
+    return [fx for fx in rows if pool_start <= fx.date <= pool_end]
+
+
 def fetch_package_fixtures(start, end, required_count, selected_league_ids):
     # Cache the complete 31-day pool for five minutes so changing unrelated
     # widgets does not repeat dozens of provider calls and consume quota.
@@ -801,16 +836,43 @@ else:
         if st.button("🎯 Generate Prediction Package", type="primary", use_container_width=True):
             try:
                 with st.spinner("Generating predictions..."):
-                    package_required = {"Daily": 5, "Weekly": 20, "Monthly": 35}.get(pkg, 0)
-                    package_fixtures = fetch_package_fixtures(start, end, package_required, selected_league_ids)
+                    if pkg in {"Daily", "Weekly", "Monthly"}:
+                        package_fixtures = fetch_slip_fixtures(start, end, pkg)
+                    else:
+                        package_fixtures = []
+
                     if pkg == "Daily":
-                        generated = [slips.daily(package_fixtures)]
+                        generated = slips.daily(package_fixtures)
                     elif pkg == "Weekly":
                         generated = slips.weekly(package_fixtures)
                     elif pkg == "Monthly":
                         generated = slips.monthly(package_fixtures)
                     else:
                         generated = []
+
+                if generated:
+                    render_markdown(f"""
+                    <div style="background: var(--background-card-alt); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; margin: 1rem 0;">
+                        <strong>{pkg} package: {len(generated)} slips generated</strong>
+                        <span style="color: var(--text-secondary); margin-left: 0.5rem;">
+                            All available leagues • diversified fixtures/outcomes
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    combined_payload = {
+                        "period": pkg.lower(),
+                        "generated_at": generated[0].generated_at.isoformat(),
+                        "slips": [s.__dict__ for s in generated],
+                    }
+                    st.download_button(
+                        "📦 Download Full 5-Slip Package JSON",
+                        json.dumps(combined_payload, default=str, indent=2),
+                        file_name=f"{pkg.lower()}_5_slip_package.json",
+                        mime="application/json",
+                        use_container_width=True,
+                        key=f"download-{pkg.lower()}-full-package",
+                    )
 
                 for s in generated:
                     render_markdown(f"""
