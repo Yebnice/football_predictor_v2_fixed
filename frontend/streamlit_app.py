@@ -562,22 +562,17 @@ with st.sidebar:
     )
     league_options = [f"{league_id} — {name}" for league_id, name in MAJOR_LEAGUES.items()]
     api_football_leagues = getattr(settings, "api_football_leagues", "39,140,78,135") or "39,140,78,135"
-    api_football_max_active_leagues = int(getattr(settings, "api_football_max_active_leagues", 4) or 4)
     default_active_ids = [x.strip() for x in api_football_leagues.split(",") if x.strip()]
     default_active_labels = [label for label in league_options if label.split(" — ", 1)[0] in default_active_ids]
     selected_league_labels = st.multiselect(
-        "Leagues to include",
+        "Priority leagues (optional)",
         league_options,
         default=default_active_labels,
-        help="You can select as many major leagues as you need. The current API plan determines how many can be refreshed before its daily/minute request quota is reached."
+        help="The app searches all leagues available from the configured providers. These selections are additional priorities; they do not exclude other leagues. Core major leagues are always backfilled when fixtures are available.",
     )
     selected_league_ids = [label.split(" — ", 1)[0] for label in selected_league_labels]
 
-    if len(selected_league_ids) > api_football_max_active_leagues:
-        st.warning(
-            f"You selected {len(selected_league_ids)} leagues. The configured safe batch is {api_football_max_active_leagues}. "
-            "The app will still use your selection, but a free API-Football plan may run out of requests."
-        )
+    st.caption("🌍 All-league search is active. Core majors are explicitly included when available.")
 
     render_markdown('<div class="settings-group-label">Status</div>', unsafe_allow_html=True)
     active_provider_names = getattr(provider, "provider_names", [settings.football_provider])
