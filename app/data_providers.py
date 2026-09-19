@@ -1036,7 +1036,60 @@ class BSDProvider(FootballProvider):
             pass
         return fx
 
-    @staticmethod,    def _normalise_odds(payload: dict[str, Any]) -> dict[str, float]:,        """Normalize BSD consensus odds into the app market map.,,        BSD documents 1X2 prices under ``odds.match_winner`` and also exposes,        over/under and BTTS under nested objects.,        """,        odds = payload.get("odds") or {},        out: dict[str, float] = {},,        winner = odds.get("match_winner") if isinstance(odds, dict) else None,        if isinstance(winner, dict):,            for source, target in (("home", "home"), ("draw", "draw"), ("away", "away")):,                try:,                    value = winner.get(source),                    if value is not None:,                        out[target] = float(value),                except (TypeError, ValueError):,                    pass,,        over_under = odds.get("over_under") if isinstance(odds, dict) else None,        if isinstance(over_under, dict):,            for source, target in (,                ("over_15", "over_1.5"), ("under_15", "under_1.5"),,                ("over_25", "over_2.5"), ("under_25", "under_2.5"),,                ("over_35", "over_3.5"), ("under_35", "under_3.5"),,            ):,                try:,                    value = over_under.get(source),                    if value is not None:,                        out[target] = float(value),                except (TypeError, ValueError):,                    pass,,        btts = odds.get("btts") if isinstance(odds, dict) else None,        if isinstance(btts, dict):,            for source, target in (("yes", "btts_yes"), ("no", "btts_no")):,                try:,                    value = btts.get(source),                    if value is not None:,                        out[target] = float(value),                except (TypeError, ValueError):,                    pass,        return out,,    def odds(self, fixture_id: str) -> dict[str, Any]:
+    @staticmethod
+    def _normalise_odds(payload: dict[str, Any]) -> dict[str, float]:
+        """Normalize BSD consensus odds into the app market map.
+
+        BSD exposes 1X2 prices under odds.match_winner and goal/BTTS prices
+        under nested odds objects.
+        """
+        odds = payload.get("odds") or {}
+        out: dict[str, float] = {}
+
+        winner = odds.get("match_winner") if isinstance(odds, dict) else None
+        if isinstance(winner, dict):
+            for source, target in (
+                ("home", "home"),
+                ("draw", "draw"),
+                ("away", "away"),
+            ):
+                try:
+                    value = winner.get(source)
+                    if value is not None:
+                        out[target] = float(value)
+                except (TypeError, ValueError):
+                    pass
+
+        over_under = odds.get("over_under") if isinstance(odds, dict) else None
+        if isinstance(over_under, dict):
+            for source, target in (
+                ("over_15", "over_1.5"),
+                ("under_15", "under_1.5"),
+                ("over_25", "over_2.5"),
+                ("under_25", "under_2.5"),
+                ("over_35", "over_3.5"),
+                ("under_35", "under_3.5"),
+            ):
+                try:
+                    value = over_under.get(source)
+                    if value is not None:
+                        out[target] = float(value)
+                except (TypeError, ValueError):
+                    pass
+
+        btts = odds.get("btts") if isinstance(odds, dict) else None
+        if isinstance(btts, dict):
+            for source, target in (("yes", "btts_yes"), ("no", "btts_no")):
+                try:
+                    value = btts.get(source)
+                    if value is not None:
+                        out[target] = float(value)
+                except (TypeError, ValueError):
+                    pass
+
+        return out
+
+    def odds(self, fixture_id: str) -> dict[str, Any]:
         event_id = fixture_id.removeprefix("bsd-")
         return self._get(f"events/{event_id}/odds/")
 
