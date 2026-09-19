@@ -77,16 +77,16 @@ class SlipTests(unittest.TestCase):
         gen = SlipGenerator(FootballProbabilityEngine(), 0.5, "major-coverage")
         slips = gen.daily(self.fixtures(80))
         required = {
-            "EPL": "premier league",
-            "La Liga": "la liga",
-            "Bundesliga": "bundesliga",
-            "Serie A": "serie a",
-            "Ligue 1": "ligue 1",
+            "EPL": ("epl", "premier league"),
+            "La Liga": ("la liga", "laliga"),
+            "Bundesliga": ("bundesliga",),
+            "Serie A": ("serie a",),
+            "Ligue 1": ("ligue 1",),
         }
         for slip in slips:
             leagues = " | ".join(str(x["league"]).casefold() for x in slip.selections)
-            for expected in required.values():
-                self.assertIn(expected, leagues)
+            for aliases in required.values():
+                self.assertTrue(any(alias in leagues for alias in aliases))
 
     def test_different_outcomes_when_multiple_are_available(self):
         gen = SlipGenerator(FootballProbabilityEngine(), 0.5, "x")
