@@ -1278,13 +1278,24 @@ class ApiFootballProvider(FootballProvider):
     """
     def __init__(self, api_key: str, base_url: str = "https://v3.football.api-sports.io",
                  timeout: float = 30.0, cache_ttl_seconds: float = 60.0,
+                 api_keys: str = "",
                  preferred_bookmaker: str = "", enrich_list_fixtures: bool = False,
                  fetch_discipline_stats: bool = False, default_leagues: str = "",
                  use_standings_form: bool = False):
         if not api_key:
             raise ValueError("API_FOOTBALL_KEY is required when FOOTBALL_PROVIDER=api-football")
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        # Accept both the legacy single key and API_FOOTBALL_KEYS=key1,key2,...
+        # Rotate to the next key whenever a request fails, including free-plan
+        # season/permission errors and HTTP 429 quota errors.
+        raw_keys = [str(x).strip() for x in str(api_keys or "").split(",") if str(x).strip()]
+        if api_key and api_key.strip() and api_key.strip() not in raw_keys:
+            raw_keys.insert(0, api_key.strip())
+        self.api_keys = list(dict.fromkeys(raw_keys))
+        if not self.api_keys:
+            raise ValueError("API_FOOTBALL_KEY or API_FOOTBALL_KEYS is required when API-Football is enabled")
+        self._api_key_index = 0
+        self.api_key = self.api_keys[0]
         self.timeout = timeout
         self.preferred_bookmaker = preferred_bookmaker
         self.default_leagues = [x.strip() for x in str(default_leagues or '').split(',') if x.strip()]
@@ -1304,6 +1315,19 @@ class ApiFootballProvider(FootballProvider):
             headers={"x-apisports-key": self.api_key, "Accept": "application/json"},
             timeout=self.timeout,
         )
+
+    def _rotate_key(self) -> None:
+        if len(self.api_keys) <= 1:
+            return
+        self._api_key_index = (self._api_key_index + 1) % len(self.api_keys)
+        self.api_key = self.api_keys[self._api_key_index]
+        self.client.headers["x-apisports-key"] = self.api_key
+        # A response that failed with one credential must not poison the cache
+        # for another credential.
+
+    @property
+    def key_count(self) -> int:
+        return len(self.api_keys)
         self._cache = _TTLCache(cache_ttl_seconds) if cache_ttl_seconds > 0 else None
 
     def _get(self, path: str, params: dict[str, Any] | None = None, cacheable: bool = True) -> dict[str, Any]:
@@ -1313,20 +1337,39 @@ class ApiFootballProvider(FootballProvider):
             cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
-        response = self.client.get(path, params=params)
-        if getattr(response, "status_code", None) == 429:
-            raise RuntimeError(
-                "API-Football rate limit hit (HTTP 429). The free plan allows 100 requests/day "
-                "and a per-minute cap; wait for the quota to reset or upgrade your plan."
-            )
-        response.raise_for_status()
-        payload = response.json()
-        errors = payload.get("errors")
-        if errors:
-            raise RuntimeError(f"API-Football error: {errors}")
-        if self._cache is not None and cacheable:
-            self._cache.set(cache_key, payload)
-        return payload
+
+        # Try every configured API-Football credential before surfacing the
+        # failure. This handles 429s, invalid keys, and plan/season errors.
+        last_error: Exception | None = None
+        attempts = len(self.api_keys)
+        for attempt in range(attempts):
+            try:
+                response = self.client.get(path, params=params)
+                if getattr(response, "status_code", None) == 429:
+                    raise RuntimeError(
+                        "API-Football rate limit hit (HTTP 429). The current key has exhausted its quota."
+                    )
+                response.raise_for_status()
+                payload = response.json()
+                errors = payload.get("errors") if isinstance(payload, dict) else None
+                if errors:
+                    raise RuntimeError(f"API-Football error: {errors}")
+                if self._cache is not None and cacheable:
+                    self._cache.set(cache_key, payload)
+                return payload
+            except Exception as exc:
+                last_error = exc
+                if attempt < attempts - 1:
+                    logger.warning(
+                        "API-Football key %d/%d failed for %s; rotating to next key: %s",
+                        self._api_key_index + 1, len(self.api_keys), path, exc,
+                    )
+                    self._rotate_key()
+                else:
+                    break
+        raise RuntimeError(
+            f"API-Football request failed after trying all {len(self.api_keys)} configured key(s): {last_error}"
+        )
 
     def fixtures(self, start: datetime, end: datetime, live: bool = False,
                  league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
@@ -1757,6 +1800,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         settings.football_provider,
         settings.football_api_base_url,
         settings.api_football_key or settings.football_api_key,
+        api_football_keys=getattr(settings, "api_football_keys", ""),
         cache_ttl_seconds=settings.provider_cache_ttl_seconds,
         sofascore_browser_path=settings.sofascore_browser_path or None,
         livescorefootball_league=(getattr(settings, "livescorefootball_leagues", "") or settings.livescorefootball_league or None),
@@ -1784,6 +1828,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
 
 
 def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: float = 60.0,
+                    api_football_keys: str = "",
                     sofascore_browser_path: str | None = None,
                     livescorefootball_league: str | None = None,
                     odds_preferred_bookmaker: str = "",
@@ -1874,7 +1919,8 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
         return CompositeFootballProvider(providers, mode=provider_mode)
 
     if normalized in {"api-football", "api_football", "apisports", "api-sports"}:
-        return ApiFootballProvider(api_key=api_key, base_url=base_url or "https://v3.football.api-sports.io",
+        return ApiFootballProvider(api_key=api_key, api_keys=api_football_keys,
+                                    base_url=base_url or "https://v3.football.api-sports.io",
                                     cache_ttl_seconds=cache_ttl_seconds,
                                     preferred_bookmaker=odds_preferred_bookmaker,
                                     enrich_list_fixtures=api_football_enrich_lists,
