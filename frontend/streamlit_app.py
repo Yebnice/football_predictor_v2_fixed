@@ -365,19 +365,53 @@ def _fetch_all_leagues_with_majors(start_dt, end_dt, season, minimum, priority_i
         "94": ("primeira liga",),
     }
 
-    for league_id in core_major_ids:
-        aliases = major_aliases[league_id]
-        present = any(
-            any(alias in _league_text(fx) for alias in aliases)
-            for fx in rows
-        )
-        if present:
-            continue
+    # Fast-path the European core through OpenFootball. Its provider supports
+    # multiple league codes in a single fixtures() call, avoiding a fallback
+    # cascade once per league.
+    composite_providers = getattr(provider, "providers", [])
+    openfootball = next(
+        (p for name, p in composite_providers if name in {"openfootball", "open-football", "football-json"}),
+        None,
+    )
+    if openfootball is not None:
+        openfootball_codes = "en.1,es.1,de.1,it.1,fr.1,nl.1,pt.1"
         try:
-            targeted = list(_provider_fetch(league_id) or [])
-            rows.extend(targeted)
+            rows.extend(
+                list(
+                    openfootball.fixtures(
+                        start_dt,
+                        end_dt,
+                        league=openfootball_codes,
+                        season=season,
+                    )
+                    or []
+                )
+            )
         except Exception:
-            continue
+            pass
+
+    # Belgium is not part of the OpenFootball mapping used by this app, so
+    # query BSD directly using its resolved API-Football -> BSD mapping.
+    bsd = next(
+        (p for name, p in composite_providers if name in {"bsd", "bzzoiro", "bzzoiro-sports-data"}),
+        None,
+    )
+    if bsd is not None:
+        try:
+            rows.extend(
+                list(
+                    bsd.fixtures(
+                        start_dt,
+                        end_dt,
+                        league="144",
+                        season=season,
+                    )
+                    or []
+                )
+            )
+        except Exception:
+            pass
+
 
     # Preserve the user's chosen leagues as additional priorities, without
     # excluding any other competitions from the broad search.
