@@ -2103,7 +2103,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
         and str(getattr(settings, "football_provider_mode", "fallback")).strip().lower() == "fallback"
     ):
         existing = [x.strip() for x in str(provider_chain or "").split(",") if x.strip()]
-        fallback_first = ["openfootball", "thesportsdb", "livescorefootball"]
+        fallback_first = ["bsd", "openfootball", "thesportsdb", "livescorefootball"]
         provider_chain = ",".join(dict.fromkeys(fallback_first + existing))
         provider_name = "auto"
 
