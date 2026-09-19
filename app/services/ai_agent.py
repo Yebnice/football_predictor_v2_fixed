@@ -353,9 +353,16 @@ class AIPredictionAgent:
             "the evidence contradicts the candidate, but do not reject solely because "
             "optional deep evidence is unavailable; instead record that limitation in "
             "risk_flags. Return one decision for every fixture presented.\n"
-            "Treat the background pipeline context as evidence about model quality and "
-            "data health. If calibration, log loss, drift, or data coverage is weak, "
-            "be more conservative and use risk_flags. Do not change those metrics.\n\n"
+            "Treat the background pipeline context as diagnostic evidence, not as an automatic "
+            "rejection gate. Calibration, log loss, drift, and data coverage must not "
+            "cause you to reject every fixture merely because a metric is imperfect. "
+            "For each fixture, start from the supplied deterministic candidates. If a "
+            "candidate is within the allowed model-probability range and there is no "
+            "direct factual contradiction in the supplied evidence, it is eligible for "
+            "approval. Reject only when the candidate is contradicted by the supplied "
+            "evidence, is clearly invalid, or the fixture data are materially unreliable. "
+            "Missing optional deep evidence alone is NOT a rejection reason. Keep any "
+            "caution in risk_flags. Do not change the model probability or invent facts.\n\n"
             + json.dumps(records, ensure_ascii=False, default=str)
             + context_text
         )
