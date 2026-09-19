@@ -1246,98 +1246,101 @@ else:
         if st.button("🎯 Generate Prediction Package", type="primary", use_container_width=True):
             try:
                 with st.spinner("Loading background-approved predictions..."):
-                    if pkg in {"Daily", "Weekly", "Monthly"}:
-                        package_fixtures = fetch_slip_fixtures(start, end, pkg)
-                    else:
-                        package_fixtures = []
-
-                    # Daily packages are generated from background-approved picks.
-                    # The ML pipeline forecasts up to 31 days ahead, while the
-                    # dashboard's Daily window is only 24 hours. When fewer than
-                    # 10 approved fixtures are available in that 24-hour window,
-                    # fall forward to the next available approved fixtures within
-                    # the pipeline's 31-day forecast horizon instead of incorrectly
-                    # reporting an empty pool. This preserves the no-unreviewed-picks
-                    # rule and keeps the package generator usable on low-fixture days.
+                    # Build the slip pool directly from approved ML rows.
+                    # Do not re-fetch live provider fixtures here: provider fixture IDs
+                    # and even team/UTC representations can differ from the background
+                    # source, which previously caused a valid approved pool to appear as 0.
                     approval_start = start
                     approval_end = end
-                    if pkg == "Daily":
-                        approval_end = start + timedelta(days=31)
+                    approved_rows = []
 
-                    approved_rows = ml_store.list_ml_predictions(
-                        limit=5000,
-                        statuses=("approved",),
-                        kickoff_from_utc=approval_start.isoformat(),
-                        kickoff_to_utc=approval_end.isoformat(),
-                    )
+                    active_model_version = None
+                    if active_ml:
+                        active_model_version = str(active_ml.get("model_version") or "") or None
 
+                    def _load_approved_rows(window_end):
+                        kwargs = {
+                            "limit": 5000,
+                            "statuses": ("approved",),
+                            "kickoff_from_utc": approval_start.isoformat(),
+                            "kickoff_to_utc": window_end.isoformat(),
+                        }
+                        if active_model_version:
+                            kwargs["model_version"] = active_model_version
+                        return ml_store.list_ml_predictions(**kwargs)
+
+                    approved_rows = _load_approved_rows(approval_end)
+
+                    # Daily normally means the next 24 hours. On a low-fixture day,
+                    # use the next available approved fixtures from the same trained
+                    # 31-day forecast so the package does not falsely report an empty
+                    # database-backed pool.
                     if pkg == "Daily" and len(approved_rows) < 10:
-                        # Rebuild the fixture pool over the same 31-day horizon so
-                        # approved database rows can be matched to real provider
-                        # fixtures. Keep the original 24-hour window when it already
-                        # contains enough approved selections.
-                        package_fixtures = fetch_slip_fixtures(
-                            start, approval_end, "Monthly"
-                        )
-                    # Provider fixture IDs are source-specific. The background
-                    # pipeline and the dashboard can legitimately fetch the same
-                    # match from different providers, so matching only on fixture_id
-                    # can incorrectly turn a populated approved pool into "0".
-                    def _match_key(fx):
-                        try:
-                            dt = fx.date.astimezone(timezone.utc)
-                            day = dt.date().isoformat()
-                        except Exception:
-                            day = str(getattr(fx, "date", ""))[:10]
-                        home = " ".join(str(getattr(fx, "home_team", "") or "").strip().casefold().split())
-                        away = " ".join(str(getattr(fx, "away_team", "") or "").strip().casefold().split())
-                        return day, home, away
+                        approval_end = start + timedelta(days=31)
+                        approved_rows = _load_approved_rows(approval_end)
 
-                    approved_by_fixture = {}
-                    approved_by_key = {}
-                    for row in approved_rows:
-                        fid = str(row.get("fixture_id") or "")
-                        if fid:
-                            approved_by_fixture.setdefault(fid, row)
+                    def _fixture_from_approved(row):
                         try:
-                            key = (
-                                str(row.get("kickoff_utc") or "")[:10],
-                                " ".join(str(row.get("home_team") or "").strip().casefold().split()),
-                                " ".join(str(row.get("away_team") or "").strip().casefold().split()),
-                            )
-                            if key[1] and key[2]:
-                                approved_by_key.setdefault(key, row)
+                            kickoff = datetime.fromisoformat(
+                                str(row.get("kickoff_utc") or "").replace("Z", "+00:00")
+                            ).astimezone(timezone.utc)
                         except Exception:
-                            continue
-
-                    ai_decisions = {}
-                    matched_fixtures = 0
-                    for fx in package_fixtures:
-                        row = approved_by_fixture.get(str(fx.fixture_id)) or approved_by_key.get(_match_key(fx))
-                        if not row:
-                            continue
-                        matched_fixtures += 1
+                            return None
+                        league = str(row.get("league") or "").strip()
+                        home = str(row.get("home_team") or "").strip()
+                        away = str(row.get("away_team") or "").strip()
+                        fixture_id = str(row.get("fixture_id") or "").strip()
+                        if (
+                            not fixture_id
+                            or not league
+                            or league.casefold() in {"unknown", "n/a", "none"}
+                            or not home
+                            or not away
+                            or kickoff < approval_start
+                            or kickoff > approval_end
+                        ):
+                            return None
                         try:
-                            if row.get("home_lambda") is not None:
-                                fx.home_xg = float(row["home_lambda"])
-                            if row.get("away_lambda") is not None:
-                                fx.away_xg = float(row["away_lambda"])
+                            home_xg = float(row.get("home_lambda")) if row.get("home_lambda") is not None else None
+                            away_xg = float(row.get("away_lambda")) if row.get("away_lambda") is not None else None
                         except (TypeError, ValueError):
-                            pass
-                        ai_decisions[str(fx.fixture_id)] = {
+                            home_xg = away_xg = None
+                        return Fixture(
+                            fixture_id=fixture_id,
+                            date=kickoff,
+                            league=league,
+                            season="",
+                            home_team=home,
+                            away_team=away,
+                            status="scheduled",
+                            home_xg=home_xg,
+                            away_xg=away_xg,
+                        )
+
+                    package_fixtures = []
+                    ai_decisions = {}
+                    seen_fixture_ids = set()
+                    for row in approved_rows:
+                        fx = _fixture_from_approved(row)
+                        if fx is None or fx.fixture_id in seen_fixture_ids:
+                            continue
+                        seen_fixture_ids.add(fx.fixture_id)
+                        package_fixtures.append(fx)
+                        ai_decisions[fx.fixture_id] = {
                             "approved": True,
                             "market": str(row.get("market") or ""),
                             "selection": str(row.get("selection") or ""),
                             "review_score": float(row.get("ai_review_score") or 0.0),
                         }
 
+                    package_fixtures.sort(key=lambda fx: fx.date)
+                    eligible_count = len(ai_decisions)
                     minimum_required = {"Daily": 10, "Weekly": 20, "Monthly": 20}.get(pkg, 0)
-                    eligible_count = matched_fixtures
-                    if not ai_decisions or eligible_count < minimum_required:
+                    if eligible_count < minimum_required:
                         raise ValueError(
                             f"Background AI-approved pool has only {eligible_count} eligible fixtures; "
                             f"{pkg.lower()} packages require at least {minimum_required}. "
-                            "The package is withheld until the scheduled ML pipeline completes successfully."
+                            "The package is withheld until the background ML pipeline has enough approved fixtures."
                         )
 
                     if pkg == "Daily":
