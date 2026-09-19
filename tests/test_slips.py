@@ -105,6 +105,27 @@ class SlipTests(unittest.TestCase):
             for aliases in required.values():
                 self.assertTrue(any(alias in leagues for alias in aliases))
 
+    def test_ai_decisions_gate_and_pin_exact_outcomes(self):
+        gen = SlipGenerator(FootballProbabilityEngine(), 0.5, "ai-gate")
+        fixtures = self.fixtures(80)
+        decisions = {}
+        for fx in fixtures:
+            markets = gen.engine.shortlist(fx, 0.5, 1)
+            if markets:
+                decision = markets[0]
+                decisions[fx.fixture_id] = {
+                    "market": decision.market,
+                    "selection": decision.selection,
+                    "approved": True,
+                }
+        slips = gen.daily(fixtures, ai_decisions=decisions)
+        self.assertEqual(len(slips), 5)
+        for slip in slips:
+            for item in slip.selections:
+                decision = decisions[item["fixture_id"]]
+                self.assertEqual(item["market"], decision["market"])
+                self.assertEqual(item["selection"], decision["selection"])
+
     def test_different_outcomes_when_multiple_are_available(self):
         gen = SlipGenerator(FootballProbabilityEngine(), 0.5, "x")
         slips = gen.weekly(self.fixtures(120))
