@@ -321,6 +321,100 @@ def _football_season_for(dt: datetime) -> int:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
+def _fetch_all_leagues_with_majors(start_dt, end_dt, season, minimum, priority_ids=()):
+    """Search the broad provider universe, then backfill core major leagues.
+
+    The public selector is no longer a hard league filter. The application
+    searches all leagues available from the configured providers and then
+    explicitly backfills the core European competitions when a broad feed
+    does not contain them.
+    """
+    core_major_ids = ("39", "140", "78", "135", "61", "144", "88", "94")
+    requested_priority = [str(x).strip() for x in priority_ids if str(x).strip()]
+    major_ids = list(dict.fromkeys([*core_major_ids, *requested_priority]))
+
+    def _provider_fetch(league=None):
+        if hasattr(_provider_local := provider, "providers"):
+            return _provider_local.fixtures(
+                start_dt,
+                end_dt,
+                league=league,
+                season=season,
+                minimum=minimum if league is None else 0,
+            )
+        return provider.fixtures(
+            start_dt,
+            end_dt,
+            league=league,
+            season=season,
+        )
+
+    rows = list(_provider_fetch(None) or [])
+
+    def _league_text(fx):
+        return " ".join(str(getattr(fx, "league", "") or "").casefold().replace("-", " ").split())
+
+    major_aliases = {
+        "39": ("premier league", "england"),
+        "140": ("laliga", "la liga", "spain"),
+        "78": ("bundesliga", "germany"),
+        "135": ("serie a", "italy"),
+        "61": ("ligue 1", "france"),
+        "144": ("jupiler", "jupiler pro league", "belgium"),
+        "88": ("eredivisie", "netherlands"),
+        "94": ("primeira liga", "portugal"),
+    }
+
+    for league_id in core_major_ids:
+        aliases = major_aliases[league_id]
+        present = any(
+            any(alias in _league_text(fx) for alias in aliases)
+            for fx in rows
+        )
+        if present:
+            continue
+        try:
+            targeted = list(_provider_fetch(league_id) or [])
+            rows.extend(targeted)
+        except Exception:
+            continue
+
+    # Preserve the user's chosen leagues as additional priorities, without
+    # excluding any other competitions from the broad search.
+    for league_id in requested_priority:
+        if league_id in core_major_ids:
+            continue
+        try:
+            rows.extend(list(_provider_fetch(league_id) or []))
+        except Exception:
+            continue
+
+    seen = set()
+    merged = []
+    for fx in rows:
+        try:
+            key = (
+                fx.date.astimezone(timezone.utc).isoformat() if fx.date.tzinfo else fx.date.isoformat(),
+                str(fx.home_team).strip().casefold(),
+                str(fx.away_team).strip().casefold(),
+                str(fx.league).strip().casefold(),
+            )
+        except Exception:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(fx)
+
+    return [
+        fx for fx in merged
+        if start_dt <= fx.date <= end_dt
+        and str(getattr(fx, "home_team", "") or "").strip().casefold() not in {"", "unknown"}
+        and str(getattr(fx, "away_team", "") or "").strip().casefold() not in {"", "unknown"}
+    ]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def _fetch_package_fixtures_cached(
     pool_start_iso: str,
     pool_end_iso: str,
@@ -331,27 +425,15 @@ def _fetch_package_fixtures_cached(
 ):
     pool_start = datetime.fromisoformat(pool_start_iso)
     pool_end = datetime.fromisoformat(pool_end_iso)
-    if hasattr(_provider, "providers"):
-        raw_target = {5: 20, 20: 60, 35: 120}.get(required_count, required_count)
-        rows = _provider.fixtures(
-            pool_start,
-            pool_end,
-            league=",".join(selected_league_ids),
-            season=season,
-            minimum=raw_target,
-        )
-    else:
-        rows = (
-            _provider.fixtures(
-                pool_start,
-                pool_end,
-                league=",".join(selected_league_ids),
-                season=season,
-            )
-            if selected_league_ids else []
-        )
+    raw_target = {5: 20, 20: 60, 35: 120}.get(required_count, required_count)
+    rows = _fetch_all_leagues_with_majors(
+        pool_start,
+        pool_end,
+        season,
+        raw_target,
+        selected_league_ids,
+    )
     return rows
-
 def _enrich_bigballs_forms(fixtures, selected_league_ids):
     """Inject real season-to-date team form when Big Balls supplied the fixtures."""
     provider_list = getattr(provider, "providers", [])
@@ -408,7 +490,7 @@ def _enrich_bigballs_forms(fixtures, selected_league_ids):
 
 
 def fetch_slip_fixtures(start, end, period):
-    """Fetch an all-league fixture pool specifically for the 5-slip package."""
+    """Fetch all available leagues and backfill the core major competitions."""
     targets = {
         "Daily": 75,
         "Weekly": 150,
@@ -420,26 +502,15 @@ def fetch_slip_fixtures(start, end, period):
     pool_start = start.astimezone(timezone.utc)
     pool_end = end.astimezone(timezone.utc)
     season = _football_season_for(pool_start)
-
-    if hasattr(provider, "providers"):
-        rows = provider.fixtures(
-            pool_start,
-            pool_end,
-            league=None,
-            season=season,
-            minimum=target,
-        )
-    else:
-        rows = provider.fixtures(
-            pool_start,
-            pool_end,
-            league=None,
-            season=season,
-        )
-    # The slip package deliberately ignores the sidebar's selected-league
-    # filter: its product rule is to use all leagues available from the
-    # configured provider chain.
-    return [fx for fx in rows if pool_start <= fx.date <= pool_end]
+    # Slip packages are intentionally independent of the sidebar league
+    # selection: broad league discovery is required, with core majors included.
+    return _fetch_all_leagues_with_majors(
+        pool_start,
+        pool_end,
+        season,
+        target,
+        (),
+    )
 
 
 def fetch_package_fixtures(start, end, required_count, selected_league_ids):
