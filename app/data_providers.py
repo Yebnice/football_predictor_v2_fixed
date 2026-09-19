@@ -1034,26 +1034,67 @@ class BSDProvider(FootballProvider):
 
     @staticmethod
     def _normalise_odds(payload: dict[str, Any]) -> dict[str, float]:
+        """Normalize BSD consensus odds into the app's compact market map.
+
+        Current BSD responses group 1X2 prices under ``odds.match_winner`` and
+        goal/BTTS prices under ``odds.over_under`` / ``odds.btts``. Keep support
+        for the older flat shape so a cached/proxied response cannot silently
+        lose prices during a rolling API update.
+        """
         odds = payload.get("odds") or {}
         out: dict[str, float] = {}
-        mapping = {
-            "home_win": "home",
-            "draw": "draw",
-            "away_win": "away",
-            "over_15_goals": "over_1.5",
-            "under_15_goals": "under_1.5",
-            "over_25_goals": "over_2.5",
-            "under_25_goals": "under_2.5",
-            "btts_yes": "btts_yes",
-            "btts_no": "btts_no",
+
+        match_winner = odds.get("match_winner") if isinstance(odds, dict) else None
+        if isinstance(match_winner, dict):
+            for source, target in (("home", "home"), ("draw", "draw"), ("away", "away")):
+                try:
+                    value = match_winner.get(source)
+                    if value is not None:
+                        out[target] = float(value)
+                except (TypeError, ValueError):
+                    pass
+
+        over_under = odds.get("over_under") if isinstance(odds, dict) else None
+        if isinstance(over_under, dict):
+            for source, target in (
+                ("over_15", "over_1.5"), ("under_15", "under_1.5"),
+                ("over_25", "over_2.5"), ("under_25", "under_2.5"),
+                ("over_35", "over_3.5"), ("under_35", "under_3.5"),
+            ):
+                try:
+                    value = over_under.get(source)
+                    if value is not None:
+                        out[target] = float(value)
+                except (TypeError, ValueError):
+                    pass
+
+        btts = odds.get("btts") if isinstance(odds, dict) else None
+        if isinstance(btts, dict):
+            for source, target in (("yes", "btts_yes"), ("no", "btts_no")):
+                try:
+                    value = btts.get(source)
+                    if value is not None:
+                        out[target] = float(value)
+                except (TypeError, ValueError):
+                    pass
+
+        legacy_mapping = {
+            "home_win": "home", "away_win": "away", "draw": "draw",
+            "over_15_goals": "over_1.5", "under_15_goals": "under_1.5",
+            "over_25_goals": "over_2.5", "under_25_goals": "under_2.5",
+            "over_35_goals": "over_3.5", "under_35_goals": "under_3.5",
+            "btts_yes": "btts_yes", "btts_no": "btts_no",
         }
-        for source, target in mapping.items():
-            try:
-                value = odds.get(source)
-                if value is not None:
-                    out[target] = float(value)
-            except (TypeError, ValueError):
-                pass
+        if isinstance(odds, dict):
+            for source, target in legacy_mapping.items():
+                if target in out:
+                    continue
+                try:
+                    value = odds.get(source)
+                    if value is not None:
+                        out[target] = float(value)
+                except (TypeError, ValueError):
+                    pass
         return out
 
     def odds(self, fixture_id: str) -> dict[str, Any]:
