@@ -2025,17 +2025,19 @@ class OpenFootballProvider(FootballProvider):
     def _season_label(start: datetime, season: int | str | None) -> str:
         if season is None or str(season).strip() == "":
             year = start.year if start.month >= 7 else start.year - 1
-            return f"{year}-{year + 1}"
+            return f"{year}-{str(year + 1)[-2:]}"
         text = str(season).strip()
         if "-" in text:
             parts = text.split("-", 1)
             try:
-                return f"{int(parts[0])}-{int(parts[1])}"
+                start_year = int(parts[0])
+                end_year = int(parts[1])
+                return f"{start_year}-{str(end_year)[-2:]}"
             except (TypeError, ValueError):
                 return text
         try:
             year = int(text)
-            return f"{year}-{year + 1}"
+            return f"{year}-{str(year + 1)[-2:]}"
         except (TypeError, ValueError):
             return text
 
