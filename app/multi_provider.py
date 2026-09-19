@@ -324,10 +324,47 @@ class CompositeFootballProvider(FootballProvider):
             for name, rows in successful:
                 for fx in rows:
                     key = self._fixture_key(fx)
-                    if key not in seen:
+                    current = seen.get(key)
+                    if current is None:
                         fx.stats = {**(fx.stats or {}), "provider": name, "provider_chain_mode": self.mode}
                         seen[key] = fx
                         merged.append(fx)
+                        continue
+
+                    # Prefer the richer record when providers disagree on the
+                    # same match. In particular, a fixture-only source can
+                    # return the match without a final score while a later
+                    # historical/results source has the completed score. The
+                    # old "first provider wins" rule silently discarded that
+                    # score and left the ML training set empty.
+                    current_has_score = (
+                        current.home_score is not None and current.away_score is not None
+                    )
+                    incoming_has_score = (
+                        fx.home_score is not None and fx.away_score is not None
+                    )
+                    current_status = str(current.status or "").strip().casefold()
+                    incoming_status = str(fx.status or "").strip().casefold()
+                    terminal_statuses = {
+                        "finished", "ft", "final", "completed", "aet",
+                        "match finished", "match finished after extra time",
+                        "match finished after penalty",
+                    }
+                    incoming_is_finished = incoming_status in terminal_statuses
+                    current_is_finished = current_status in terminal_statuses
+
+                    if (incoming_has_score and not current_has_score) or (
+                        incoming_is_finished and not current_is_finished and incoming_has_score
+                    ):
+                        fx.stats = {
+                            **(fx.stats or {}),
+                            "provider": name,
+                            "provider_chain_mode": self.mode,
+                            "merged_over_provider": str((current.stats or {}).get("provider") or ""),
+                        }
+                        index = merged.index(current)
+                        merged[index] = fx
+                        seen[key] = fx
             return merged
 
         if self.mode == "fallback" and minimum > 0 and collected:
