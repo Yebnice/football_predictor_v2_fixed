@@ -158,6 +158,49 @@ def _pdf_safe(value) -> str:
     )
 
 
+def top_high_confidence_predictions(fixtures, limit: int):
+    """Return the highest-confidence publishable prediction for each fixture."""
+    candidates = []
+    seen_fixtures = set()
+
+    for fx in fixtures:
+        fixture_id = str(getattr(fx, "fixture_id", "") or "")
+        if not fixture_id or fixture_id in seen_fixtures:
+            continue
+
+        markets = engine.shortlist(
+            fx,
+            settings.min_selection_confidence,
+            1,
+        )
+        if not markets:
+            continue
+
+        prediction = markets[0]
+        seen_fixtures.add(fixture_id)
+        candidates.append({
+            "fixture_id": fixture_id,
+            "home_team": fx.home_team,
+            "away_team": fx.away_team,
+            "market": prediction.market,
+            "selection": prediction.selection,
+            "probability": prediction.probability,
+            "fair_odds": prediction.fair_odds,
+            "date": fx.date,
+        })
+
+    candidates.sort(
+        key=lambda item: (
+            item["probability"],
+            item["date"],
+            item["home_team"],
+            item["away_team"],
+        ),
+        reverse=True,
+    )
+    return candidates[:limit]
+
+
 def build_slip_pdf(period: str, slip_number: int, selections) -> bytes:
     """Create a readable A4 PDF containing only Match and Outcome."""
     buffer = BytesIO()
@@ -1147,6 +1190,42 @@ else:
                         generated = slips.monthly(package_fixtures)
                     else:
                         generated = []
+
+                if generated:
+                    top_limit = {"Daily": 5, "Weekly": 10, "Monthly": 15}.get(pkg, 5)
+                    top_predictions = top_high_confidence_predictions(
+                        package_fixtures,
+                        top_limit,
+                    )
+
+                    render_markdown(f"""
+                    <div style="background: var(--background-card); border: 1px solid var(--primary-color); border-radius: 10px; padding: 1rem; margin: 1rem 0;">
+                        <h3 style="margin: 0 0 0.35rem 0;">🏆 Top High-Confidence Predictions — {esc(pkg)}</h3>
+                        <p style="color: var(--text-secondary); margin: 0;">
+                            Highest-confidence publishable predictions from the {esc(pkg.lower())} fixture pool.
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if top_predictions:
+                        top_rows = [
+                            {
+                                "Match": f"{item["home_team"]} vs {item["away_team"]}",
+                                "Outcome": (
+                                    f"BTTS - {item["selection"]}"
+                                    if item["market"] == "BTTS" and item["selection"] in {"Yes", "No"}
+                                    else item["selection"]
+                                ),
+                            }
+                            for item in top_predictions
+                        ]
+                        st.dataframe(
+                            pd.DataFrame(top_rows),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                    else:
+                        st.info(f"No high-confidence {pkg.lower()} predictions are available for the current fixture pool.")
 
                 if generated:
                     render_markdown(f"""
