@@ -794,6 +794,12 @@ class BSDProvider(FootballProvider):
         "61": "Ligue 1",
         "88": "Eredivisie",
         "94": "Primeira Liga",
+        "71": "Brasileirão Serie A",
+        "253": "MLS",
+        "307": "Saudi Pro League",
+        "103": "Eliteserien",
+        "113": "Allsvenskan",
+        "106": "Ekstraklasa",
     }
 
     def __init__(
@@ -975,19 +981,55 @@ class BSDProvider(FootballProvider):
         text = str(league).strip()
         if not text.isdigit():
             return text
+
+        # The Streamlit selector uses API-Football league ids, while BSD has
+        # its own ids. BSD explicitly documents /leagues/ as the source of
+        # truth, so resolve by name instead of hardcoding guessed BSD ids.
         name = self.API_FOOTBALL_LEAGUE_NAMES.get(text)
         if not name:
-            return None
+            try:
+                return int(text)
+            except ValueError:
+                return None
+
         payload = self._get("leagues/", {"limit": 200, "offset": 0})
-        rows = payload.get("results") or []
-        target = name.casefold().replace("-", " ")
+        rows = payload.get("results") or payload.get("leagues") or payload.get("data") or []
+        if isinstance(rows, dict):
+            rows = list(rows.values())
+
+        def norm(value: Any) -> str:
+            return " ".join(
+                str(value or "").strip().casefold().replace("-", " ").split()
+            )
+
+        target = norm(name)
+        # Accept common BSD naming variants, e.g. "Brasileirão Série A".
+        aliases = {
+            "l aliga": {"laliga", "la liga"},
+            "brasileirão serie a": {"brasileirao serie a", "brasileirão série a", "serie a brazil"},
+            "primeira liga": {"primeira liga", "liga portugal", "liga portugal betclic"},
+        }
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            candidate = str(row.get("name") or "").strip().casefold().replace("-", " ")
+            candidate = norm(row.get("name") or row.get("league_name"))
+            if not candidate:
+                continue
             if candidate == target or candidate.startswith(target) or target in candidate:
                 return row.get("id")
+            for alias in aliases.get(target, set()):
+                if candidate == norm(alias) or candidate.startswith(norm(alias)):
+                    return row.get("id")
         return None
+
+    def _resolve_current_season_id(self, league_id: int | str | None) -> int | str | None:
+        if league_id is None or str(league_id).strip() == "":
+            return None
+        payload = self._get(f"leagues/{league_id}/season/")
+        season = payload.get("season") if isinstance(payload, dict) else None
+        if not isinstance(season, dict):
+            season = payload if isinstance(payload, dict) else {}
+        return season.get("id")
 
     def fixtures(
         self,
@@ -1001,15 +1043,25 @@ class BSDProvider(FootballProvider):
         params: dict[str, Any] = {"limit": 200, "offset": 0}
         if resolved_league is not None:
             params["league_id"] = resolved_league
+
         if live:
             params["status"] = "live"
             endpoint = "events/live/"
         else:
+            # BSD documents season_id as the filter for a league's current
+            # season. Resolve it from the API instead of guessing/hardcoding it.
+            season_id = self._resolve_current_season_id(resolved_league)
+            if season_id is not None:
+                params["season_id"] = season_id
+            params["status"] = "upcoming"
             params["date_from"] = start.date().isoformat()
             params["date_to"] = end.date().isoformat()
             endpoint = "events/"
+
         payload = self._get(endpoint, params, cacheable=not live)
-        rows = payload.get("results") or []
+        rows = payload.get("results") or payload.get("events") or payload.get("data") or []
+        if isinstance(rows, dict):
+            rows = list(rows.values())
         fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
         return [fx for fx in fixtures if start <= fx.date <= end]
 
@@ -1040,18 +1092,40 @@ class BSDProvider(FootballProvider):
     def _normalise_odds(payload: dict[str, Any]) -> dict[str, float]:
         """Normalize BSD consensus odds into the app market map.
 
-        BSD exposes 1X2 prices under odds.match_winner and goal/BTTS prices
-        under nested odds objects.
+        BSD v2 documents a flat consensus shape for the per-match odds
+        endpoint, while older test fixtures in this project used nested fields.
+        Support both shapes so neither cached data nor compatibility tests break.
         """
         odds = payload.get("odds") or {}
         out: dict[str, float] = {}
 
-        winner = odds.get("match_winner") if isinstance(odds, dict) else None
+        if not isinstance(odds, dict):
+            return out
+
+        for source, target in (
+            ("home_win", "home"),
+            ("draw", "draw"),
+            ("away_win", "away"),
+            ("over_15_goals", "over_1.5"),
+            ("under_15_goals", "under_1.5"),
+            ("over_25_goals", "over_2.5"),
+            ("under_25_goals", "under_2.5"),
+            ("over_35_goals", "over_3.5"),
+            ("under_35_goals", "under_3.5"),
+            ("btts_yes", "btts_yes"),
+            ("btts_no", "btts_no"),
+        ):
+            try:
+                value = odds.get(source)
+                if value is not None:
+                    out[target] = float(value)
+            except (TypeError, ValueError):
+                pass
+
+        winner = odds.get("match_winner")
         if isinstance(winner, dict):
             for source, target in (
-                ("home", "home"),
-                ("draw", "draw"),
-                ("away", "away"),
+                ("home", "home"), ("draw", "draw"), ("away", "away")
             ):
                 try:
                     value = winner.get(source)
@@ -1060,7 +1134,7 @@ class BSDProvider(FootballProvider):
                 except (TypeError, ValueError):
                     pass
 
-        over_under = odds.get("over_under") if isinstance(odds, dict) else None
+        over_under = odds.get("over_under")
         if isinstance(over_under, dict):
             for source, target in (
                 ("over_15", "over_1.5"),
@@ -1077,7 +1151,7 @@ class BSDProvider(FootballProvider):
                 except (TypeError, ValueError):
                     pass
 
-        btts = odds.get("btts") if isinstance(odds, dict) else None
+        btts = odds.get("btts")
         if isinstance(btts, dict):
             for source, target in (("yes", "btts_yes"), ("no", "btts_no")):
                 try:
