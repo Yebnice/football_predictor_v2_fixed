@@ -138,6 +138,70 @@ class ISportsAPIProvider(FootballProvider):
         }.get(state, "scheduled")
 
     @staticmethod
+    def _is_finished(row: dict[str, Any]) -> bool:
+        return str(row.get("status") or "").strip().lower() in {"finished", "final", "completed"}
+
+    @staticmethod
+    def _form_from_rows(rows: list[dict[str, Any]], team_name: str, before: datetime, n: int = 5) -> TeamForm:
+        target = team_name.strip().casefold()
+        matches: list[tuple[datetime, dict[str, Any]]] = []
+        for row in rows:
+            if not BigBallsDataProvider._is_finished(row):
+                continue
+            home = row.get("home") or {}
+            away = row.get("away") or {}
+            home_name = str(home.get("name") or "").strip()
+            away_name = str(away.get("name") or "").strip()
+            if target not in {home_name.casefold(), away_name.casefold()}:
+                continue
+            dt = BigBallsDataProvider._parse_dt(row.get("kickoff_utc"))
+            if dt >= before:
+                continue
+            score = row.get("score") or {}
+            hs, aw = score.get("home"), score.get("away")
+            if hs is None or aw is None:
+                continue
+            try:
+                int(hs); int(aw)
+            except (TypeError, ValueError):
+                continue
+            matches.append((dt, row))
+
+        matches.sort(key=lambda item: item[0], reverse=True)
+        wins = draws = losses = goals_for = goals_against = 0
+        for _, row in matches[:n]:
+            home = row.get("home") or {}
+            score = row.get("score") or {}
+            hs, aw = int(score.get("home")), int(score.get("away"))
+            if str(home.get("name") or "").strip().casefold() == target:
+                goals_for += hs
+                goals_against += aw
+                if hs > aw:
+                    wins += 1
+                elif hs == aw:
+                    draws += 1
+                else:
+                    losses += 1
+            else:
+                goals_for += aw
+                goals_against += hs
+                if aw > hs:
+                    wins += 1
+                elif aw == hs:
+                    draws += 1
+                else:
+                    losses += 1
+
+        return TeamForm(
+            matches=wins + draws + losses,
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            goals_for=float(goals_for),
+            goals_against=float(goals_against),
+        )
+
+    @staticmethod
     def _normalise(row: dict[str, Any]) -> Fixture:
         return Fixture(
             fixture_id=f"isports-{row.get('matchId')}",
@@ -299,37 +363,40 @@ class BigBallsDataProvider(FootballProvider):
         if live:
             params["status"] = "live"
 
-        # The dashboard uses API-Football numeric league IDs. Translate the
-        # common top-five leagues to Big Balls canonical keys for efficient
-        # league-scoped requests.
         league_map = {
             "39": "epl", "140": "laliga", "78": "bundesliga",
             "135": "serie-a", "61": "ligue-1", "253": "mls",
-            "94": "primeira-liga",
+            "94": "primeira-liga", "71": "brazilian-serie-a",
         }
-        tokens = []
-        if league is not None:
-            tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
-        if tokens:
-            mapped = [league_map[t] for t in tokens if t in league_map]
-            if mapped and not live:
-                rows: list[dict[str, Any]] = []
-                for slug in dict.fromkeys(mapped):
-                    payload = self._get("matches", {**params, "league": slug})
-                    data = payload.get("data") or []
-                    rows.extend(data if isinstance(data, list) else [])
-            else:
-                payload = self._get("matches", params)
-                rows = payload.get("data") or []
-                if isinstance(rows, dict):
-                    rows = list(rows.values())
+        tokens = (
+            [str(league)] if isinstance(league, int)
+            else [x.strip() for x in str(league).split(",") if x.strip()]
+            if league is not None else []
+        )
+        mapped = [league_map[t] for t in tokens if t in league_map]
+
+        rows: list[dict[str, Any]] = []
+        if mapped:
+            for slug in dict.fromkeys(mapped):
+                payload = self._get("matches", {**params, "league": slug})
+                data = payload.get("data") or []
+                rows.extend(data if isinstance(data, list) else [])
         else:
             payload = self._get("matches", params)
-            rows = payload.get("data") or []
-            if isinstance(rows, dict):
-                rows = list(rows.values())
+            data = payload.get("data") or []
+            rows = list(data.values()) if isinstance(data, dict) else data
 
-        fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
+        fixtures = [self._normalize(row) for row in rows if isinstance(row, dict)]
+
+        # Build leakage-safe recent form from finished rows already returned by
+        # the same league feed. The current provider deliberately does not force
+        # status=scheduled for pre-match requests so recent results remain visible
+        # for form calculations.
+        for fx in fixtures:
+            if fx.status in {"scheduled", "postponed", "suspended"}:
+                fx.home_form = self._form_from_rows(rows, fx.home_team, fx.date, n=5)
+                fx.away_form = self._form_from_rows(rows, fx.away_team, fx.date, n=5)
+
         return [fx for fx in fixtures if start <= fx.date <= end]
 
     def fixture_by_id(self, fixture_id: str) -> Fixture | None:
