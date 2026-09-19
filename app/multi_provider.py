@@ -349,15 +349,11 @@ class CompositeFootballProvider(FootballProvider):
                     normalized = _extract_1x2_odds(raw, fx.home_team, fx.away_team)
                 else:
                     raw = provider.odds(candidate_id)
-                    odds = raw.get("odds") if isinstance(raw, dict) else None
-                    normalized = {}
-                    if isinstance(odds, dict):
-                        for source, target in {"home_win": "home", "draw": "draw", "away_win": "away"}.items():
-                            try:
-                                if odds.get(source) is not None:
-                                    normalized[target] = float(odds[source])
-                            except (TypeError, ValueError):
-                                pass
+                    normalized = (
+                        provider._normalise_odds(raw)
+                        if hasattr(provider, "_normalise_odds")
+                        else {}
+                    )
                 if normalized:
                     fx.odds = normalized
                     fx.stats = {**(fx.stats or {}), "odds_provider": name, "odds_fixture_id": candidate_id}
