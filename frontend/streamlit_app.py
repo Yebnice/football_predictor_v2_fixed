@@ -963,7 +963,19 @@ else:
                     combined_payload = {
                         "period": pkg.lower(),
                         "generated_at": generated[0].generated_at.isoformat(),
-                        "slips": [s.__dict__ for s in generated],
+                        "slips": [
+                            {
+                                "slip_number": s.slip_number,
+                                "selections": [
+                                    {
+                                        "Match": f"{item.get('home_team', '')} vs {item.get('away_team', '')}",
+                                        "Outcome": item.get("selection", ""),
+                                    }
+                                    for item in s.selections
+                                ],
+                            }
+                            for s in generated
+                        ],
                     }
                     st.download_button(
                         "📦 Download Full 5-Slip Package JSON",
@@ -982,11 +994,29 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    st.dataframe(s.selections, use_container_width=True, hide_index=True)
+                    slip_rows = [
+                        {
+                            "Match": f"{item.get('home_team', '')} vs {item.get('away_team', '')}",
+                            "Outcome": item.get("selection", ""),
+                        }
+                        for item in s.selections
+                    ]
 
+                    st.dataframe(
+                        pd.DataFrame(slip_rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    simple_payload = {
+                        "period": s.period,
+                        "slip_number": s.slip_number,
+                        "generated_at": s.generated_at.isoformat(),
+                        "selections": slip_rows,
+                    }
                     st.download_button(
-                        "📥 Download Package JSON",
-                        json.dumps(s.__dict__, default=str),
+                        "📥 Download Slip JSON",
+                        json.dumps(simple_payload, indent=2),
                         file_name=f"{s.period}_slip_{s.slip_number}.json",
                         mime="application/json",
                         use_container_width=True
@@ -1018,15 +1048,39 @@ else:
                             f"— {len(selections)} selections"
                         )
                         if selections:
-                            st.dataframe(pd.DataFrame(selections), use_container_width=True, hide_index=True)
+                            saved_rows = [
+                                {
+                                    "Match": (
+                                        f"{item.get('home_team', '')} vs {item.get('away_team', '')}"
+                                        if "home_team" in item else item.get("Match", "")
+                                    ),
+                                    "Outcome": item.get("selection", item.get("Outcome", "")),
+                                }
+                                for item in selections
+                            ]
+                            st.dataframe(
+                                pd.DataFrame(saved_rows),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
                 elif isinstance(saved_payload, dict) and isinstance(saved_payload.get("selections"), list):
                     st.success(
                         f"Loaded {str(saved_payload.get('period', 'slip')).title()} Slip "
                         f"#{saved_payload.get('slip_number', '—')} with "
                         f"{len(saved_payload['selections'])} selections."
                     )
+                    saved_rows = [
+                        {
+                            "Match": (
+                                f"{item.get('home_team', '')} vs {item.get('away_team', '')}"
+                                if "home_team" in item else item.get("Match", "")
+                            ),
+                            "Outcome": item.get("selection", item.get("Outcome", "")),
+                        }
+                        for item in saved_payload["selections"]
+                    ]
                     st.dataframe(
-                        pd.DataFrame(saved_payload["selections"]),
+                        pd.DataFrame(saved_rows),
                         use_container_width=True,
                         hide_index=True,
                     )
