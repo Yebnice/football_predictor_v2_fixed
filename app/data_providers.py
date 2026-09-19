@@ -386,7 +386,7 @@ class BigBallsDataProvider(FootballProvider):
             data = payload.get("data") or []
             rows = list(data.values()) if isinstance(data, dict) else data
 
-        fixtures = [self._normalize(row) for row in rows if isinstance(row, dict)]
+        fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
 
         # Build leakage-safe recent form from finished rows already returned by
         # the same league feed. The current provider deliberately does not force
