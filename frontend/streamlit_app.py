@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 import html
 import json
 import sys
@@ -16,6 +17,11 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, PageBreak
 
 from app.config import settings
 from app.leagues import MAJOR_LEAGUES
@@ -129,6 +135,189 @@ def render_markdown(body, **kwargs):
     """Render Markdown/HTML blocks without treating Python indentation as a code block."""
     cleaned = "\n".join(line.lstrip() for line in str(body).splitlines())
     return _RAW_MARKDOWN(cleaned.strip("\n"), **kwargs)
+
+def _pdf_safe(value) -> str:
+    """Normalize slip text to characters supported by the PDF base font."""
+    return (
+        str(value or "")
+        .replace("\u2014", "-")
+        .replace("\u2013", "-")
+        .replace("\u2212", "-")
+        .replace("\u2022", "-")
+        .encode("latin-1", "replace")
+        .decode("latin-1")
+    )
+
+
+def build_slip_pdf(period: str, slip_number: int, selections) -> bytes:
+    """Create a readable A4 PDF containing only Match and Outcome."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=12 * mm,
+        leftMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=f"{period.title()} Slip #{slip_number}",
+        author="Football Predictor",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "SlipTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        spaceAfter=4 * mm,
+    )
+    meta_style = ParagraphStyle(
+        "SlipMeta",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#666666"),
+        spaceAfter=5 * mm,
+    )
+    cell_style = ParagraphStyle(
+        "SlipCell",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9.5,
+        leading=12,
+    )
+    outcome_style = ParagraphStyle(
+        "SlipOutcome",
+        parent=cell_style,
+        fontName="Helvetica-Bold",
+        alignment=1,
+    )
+    header_style = ParagraphStyle(
+        "SlipHeader",
+        parent=cell_style,
+        fontName="Helvetica-Bold",
+        textColor=colors.white,
+        alignment=0,
+    )
+
+    rows = [[Paragraph("MATCH", header_style), Paragraph("OUTCOME", header_style)]]
+    for item in selections:
+        rows.append([
+            Paragraph(
+                _pdf_safe(f"{item.get('home_team', '')} vs {item.get('away_team', '')}"),
+                cell_style,
+            ),
+            Paragraph(_pdf_safe(item.get("selection", "")), outcome_style),
+        ])
+
+    story = [
+        Paragraph(f"{_pdf_safe(period.title())} Prediction Slip #{slip_number}", title_style),
+        Paragraph(
+            f"{len(selections)} matches - generated "
+            f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+            meta_style,
+        ),
+    ]
+    table = Table(rows, colWidths=[145 * mm, 38 * mm], repeatRows=1, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D97757")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D9D9D9")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (1, 1), (1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+            colors.white,
+            colors.HexColor("#F7F4EF"),
+        ]),
+    ]))
+    story.append(table)
+    doc.build(story)
+    return buffer.getvalue()
+
+
+def build_package_pdf(period: str, slips) -> bytes:
+    """Create one readable A4 PDF containing all slips."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=12 * mm,
+        leftMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=f"{period.title()} 5-Slip Package",
+        author="Football Predictor",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "PackageTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        spaceAfter=5 * mm,
+    )
+    cell_style = ParagraphStyle(
+        "PackageCell",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9.5,
+        leading=12,
+    )
+    header_style = ParagraphStyle(
+        "PackageHeader",
+        parent=cell_style,
+        fontName="Helvetica-Bold",
+        textColor=colors.white,
+    )
+    outcome_style = ParagraphStyle(
+        "PackageOutcome",
+        parent=cell_style,
+        fontName="Helvetica-Bold",
+        alignment=1,
+    )
+
+    story = []
+    for index, slip in enumerate(slips):
+        if index:
+            story.append(PageBreak())
+        story.append(Paragraph(
+            f"{_pdf_safe(period.title())} Prediction Slip #{slip.slip_number}",
+            title_style,
+        ))
+        rows = [[Paragraph("MATCH", header_style), Paragraph("OUTCOME", header_style)]]
+        for item in slip.selections:
+            rows.append([
+                Paragraph(
+                    _pdf_safe(f"{item.get('home_team', '')} vs {item.get('away_team', '')}"),
+                    cell_style,
+                ),
+                Paragraph(_pdf_safe(item.get("selection", "")), outcome_style),
+            ])
+        table = Table(rows, colWidths=[145 * mm, 38 * mm], repeatRows=1, hAlign="LEFT")
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D97757")),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D9D9D9")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (1, 1), (1, -1), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+                colors.white,
+                colors.HexColor("#F7F4EF"),
+            ]),
+        ]))
+        story.append(table)
+
+    doc.build(story)
+    return buffer.getvalue()
+
 
 def esc(value) -> str:
     """Escape a value before interpolating it into an unsafe_allow_html
@@ -978,6 +1167,15 @@ else:
                         ],
                     }
                     st.download_button(
+                        "📄 Download All 5 Slips PDF",
+                        build_package_pdf(pkg.lower(), generated),
+                        file_name=f"{pkg.lower()}_5_slip_package.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key=f"pdf-{pkg.lower()}-full-package",
+                    )
+
+                    st.download_button(
                         "📦 Download Full 5-Slip Package JSON",
                         json.dumps(combined_payload, default=str, indent=2),
                         file_name=f"{pkg.lower()}_5_slip_package.json",
@@ -1014,13 +1212,25 @@ else:
                         "generated_at": s.generated_at.isoformat(),
                         "selections": slip_rows,
                     }
-                    st.download_button(
-                        "📥 Download Slip JSON",
-                        json.dumps(simple_payload, indent=2),
-                        file_name=f"{s.period}_slip_{s.slip_number}.json",
-                        mime="application/json",
-                        use_container_width=True
-                    )
+                    download_cols = st.columns(2)
+                    with download_cols[0]:
+                        st.download_button(
+                            "📥 Download Slip JSON",
+                            json.dumps(simple_payload, indent=2),
+                            file_name=f"{s.period}_slip_{s.slip_number}.json",
+                            mime="application/json",
+                            use_container_width=True,
+                            key=f"json-{s.period}-{s.slip_number}",
+                        )
+                    with download_cols[1]:
+                        st.download_button(
+                            "📄 Download Slip PDF",
+                            build_slip_pdf(s.period, s.slip_number, s.selections),
+                            file_name=f"{s.period}_slip_{s.slip_number}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key=f"pdf-{s.period}-{s.slip_number}",
+                        )
             except Exception as exc:
                 st.error(f"❌ Failed to generate package: {str(exc)}")
 
