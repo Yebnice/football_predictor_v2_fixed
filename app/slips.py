@@ -196,7 +196,7 @@ class SlipGenerator:
             # Sample without replacement by fixture for the remaining slots. Lower-use fixtures and
             # higher-probability outcomes are preferred, but the RNG seed makes
             # each package reproducible.
-            available = list(fixture_ids)
+            available = [fid for fid in fixture_ids if fid not in seeded_fixtures]
             while available and len(selected) < target:
                 weighted: list[tuple[str, float]] = []
                 for fixture_id in available:
