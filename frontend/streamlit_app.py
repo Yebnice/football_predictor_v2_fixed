@@ -136,6 +136,15 @@ def render_markdown(body, **kwargs):
     cleaned = "\n".join(line.lstrip() for line in str(body).splitlines())
     return _RAW_MARKDOWN(cleaned.strip("\n"), **kwargs)
 
+def _display_outcome(item) -> str:
+    """Return a clear human-readable outcome for the slip."""
+    selection = str(item.get("selection", "") or "").strip()
+    market = str(item.get("market", "") or "").strip()
+    if market == "BTTS" and selection in {"Yes", "No"}:
+        return f"BTTS - {selection}"
+    return selection
+
+
 def _pdf_safe(value) -> str:
     """Normalize slip text to characters supported by the PDF base font."""
     return (
@@ -208,7 +217,7 @@ def build_slip_pdf(period: str, slip_number: int, selections) -> bytes:
                 _pdf_safe(f"{item.get('home_team', '')} vs {item.get('away_team', '')}"),
                 cell_style,
             ),
-            Paragraph(_pdf_safe(item.get("selection", "")), outcome_style),
+            Paragraph(_pdf_safe(_display_outcome(item)), outcome_style),
         ])
 
     story = [
@@ -1158,7 +1167,7 @@ else:
                                 "selections": [
                                     {
                                         "Match": f"{item.get('home_team', '')} vs {item.get('away_team', '')}",
-                                        "Outcome": item.get("selection", ""),
+                                        "Outcome": _display_outcome(item),
                                     }
                                     for item in s.selections
                                 ],
@@ -1264,7 +1273,7 @@ else:
                                         f"{item.get('home_team', '')} vs {item.get('away_team', '')}"
                                         if "home_team" in item else item.get("Match", "")
                                     ),
-                                    "Outcome": item.get("selection", item.get("Outcome", "")),
+                                    "Outcome": _display_outcome(item) if "selection" in item else item.get("Outcome", ""),
                                 }
                                 for item in selections
                             ]
