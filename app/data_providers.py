@@ -1873,6 +1873,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
                     livescorefootball_league=livescorefootball_league,
                     odds_preferred_bookmaker=odds_preferred_bookmaker,
                     api_football_enrich_lists=api_football_enrich_lists,
+                    api_football_keys=api_football_keys,
                     api_football_fetch_discipline=api_football_fetch_discipline,
                     api_football_leagues=api_football_leagues,
                     api_football_use_standings_form=api_football_use_standings_form,
