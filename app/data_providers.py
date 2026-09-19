@@ -794,6 +794,7 @@ class BSDProvider(FootballProvider):
         "61": "Ligue 1",
         "88": "Eredivisie",
         "94": "Primeira Liga",
+        "218": "Austrian Bundesliga",
         "71": "Brasileirão Serie A",
         "253": "MLS",
         "307": "Saudi Pro League",
@@ -1022,15 +1023,6 @@ class BSDProvider(FootballProvider):
                     return row.get("id")
         return None
 
-    def _resolve_current_season_id(self, league_id: int | str | None) -> int | str | None:
-        if league_id is None or str(league_id).strip() == "":
-            return None
-        payload = self._get(f"leagues/{league_id}/season/")
-        season = payload.get("season") if isinstance(payload, dict) else None
-        if not isinstance(season, dict):
-            season = payload if isinstance(payload, dict) else {}
-        return season.get("id")
-
     def fixtures(
         self,
         start: datetime,
@@ -1048,12 +1040,10 @@ class BSDProvider(FootballProvider):
             params["status"] = "live"
             endpoint = "events/live/"
         else:
-            # BSD documents season_id as the filter for a league's current
-            # season. Resolve it from the API instead of guessing/hardcoding it.
-            season_id = self._resolve_current_season_id(resolved_league)
-            if season_id is not None:
-                params["season_id"] = season_id
-            params["status"] = "upcoming"
+            # BSD uses notstarted for upcoming fixtures. The league docs
+            # demonstrate /events/?league_id={id}&status=notstarted; the date
+            # filters then keep only the caller request window.
+            params["status"] = "notstarted"
             params["date_from"] = start.date().isoformat()
             params["date_to"] = end.date().isoformat()
             endpoint = "events/"
