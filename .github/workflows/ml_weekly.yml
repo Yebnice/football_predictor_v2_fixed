@@ -8,14 +8,16 @@ on:
 jobs:
   weekly:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
       - name: Validate background ML configuration
         env:
           PYTHONPATH: ${{ github.workspace }}
@@ -31,10 +33,13 @@ jobs:
 
       - name: Retrain, evaluate, monitor and AI-review future predictions
         env:
+          PYTHONPATH: ${{ github.workspace }}
           DB_PATH: ${{ secrets.DB_PATH }}
-          FOOTBALL_PROVIDER: ${{ secrets.FOOTBALL_PROVIDER }}
-          FOOTBALL_PROVIDER_CHAIN: "openfootball,football-data,thesportsdb,bigballsdata,bsd,livescorefootball,api-football"
-          FOOTBALL_PROVIDER_MODE: "merge"
+          # Weekly retraining uses the same bounded OpenFootball history source
+          # so a slow/rate-limited provider cannot hold the ML job open.
+          FOOTBALL_PROVIDER: "openfootball"
+          FOOTBALL_PROVIDER_CHAIN: "openfootball"
+          FOOTBALL_PROVIDER_MODE: "fallback"
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_KEYS: ${{ secrets.API_FOOTBALL_KEYS }}
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
