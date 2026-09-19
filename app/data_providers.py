@@ -1162,6 +1162,98 @@ class BSDProvider(FootballProvider):
                 except (TypeError, ValueError):
                     pass
 
+        def price(value: Any) -> float | None:
+            if isinstance(value, dict):
+                for key in ("price", "odds", "decimal"):
+                    if value.get(key) is not None:
+                        value = value.get(key)
+                        break
+            try:
+                number = float(value)
+                return number if number > 1.0 else None
+            except (TypeError, ValueError):
+                return None
+
+        def put_corner(line: Any, over_value: Any, under_value: Any) -> None:
+            try:
+                line_value = float(line)
+            except (TypeError, ValueError):
+                return
+            over_price = price(over_value)
+            under_price = price(under_value)
+            if over_price is not None:
+                out[f"corner_over_{line_value:g}"] = over_price
+            if under_price is not None:
+                out[f"corner_under_{line_value:g}"] = under_price
+
+        # BSD publishes total-corners OU markets as part of the match odds
+        # market tree. Accept both that tree and flatter cached shapes.
+        markets = payload.get("markets") or []
+        if isinstance(markets, list):
+            for market in markets:
+                if not isinstance(market, dict):
+                    continue
+                family = " ".join(
+                    str(market.get(key) or "").strip().casefold()
+                    for key in ("market_family", "market_name", "name", "description")
+                )
+                if "corner" not in family:
+                    continue
+
+                line = market.get("market_line")
+                if line is None:
+                    line = market.get("line")
+
+                over_value = (
+                    market.get("over")
+                    or market.get("odds_over")
+                    or market.get("consensus_over")
+                )
+                under_value = (
+                    market.get("under")
+                    or market.get("odds_under")
+                    or market.get("consensus_under")
+                )
+
+                if over_value is None or under_value is None:
+                    over_prices: list[float] = []
+                    under_prices: list[float] = []
+                    for bookmaker in market.get("bookmakers") or []:
+                        if not isinstance(bookmaker, dict):
+                            continue
+                        prices = bookmaker.get("prices") or bookmaker.get("odds") or {}
+                        if not isinstance(prices, dict):
+                            continue
+                        for key, value in prices.items():
+                            key_norm = str(key).strip().casefold()
+                            p = price(value)
+                            if p is None:
+                                continue
+                            if key_norm.startswith("over"):
+                                over_prices.append(p)
+                            elif key_norm.startswith("under"):
+                                under_prices.append(p)
+                    if over_value is None and over_prices:
+                        over_value = sum(over_prices) / len(over_prices)
+                    if under_value is None and under_prices:
+                        under_value = sum(under_prices) / len(under_prices)
+
+                if line is not None:
+                    put_corner(line, over_value, under_value)
+
+        for container_key in ("total_corners", "corners", "corner_totals"):
+            block = odds.get(container_key)
+            if not isinstance(block, dict):
+                continue
+            for raw_line, pair in block.items():
+                if not isinstance(pair, dict):
+                    continue
+                put_corner(
+                    raw_line,
+                    pair.get("over") or pair.get("over_odds"),
+                    pair.get("under") or pair.get("under_odds"),
+                )
+
         return out
 
     def odds(self, fixture_id: str) -> dict[str, Any]:
