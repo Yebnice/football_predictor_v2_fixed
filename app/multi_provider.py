@@ -210,6 +210,14 @@ class CompositeFootballProvider(FootballProvider):
                     translated = [API_FOOTBALL_TO_OPENFOOTBALL[token] for token in tokens if token in API_FOOTBALL_TO_OPENFOOTBALL]
                     rows = []
                     provider_season = season
+                    # OpenFootball names its current season folder as
+                    # YYYY-YY (for example 2026-27), not the API-Football
+                    # starting year alone (2026).
+                    if provider_season is not None:
+                        text_season = str(provider_season).strip()
+                        if text_season.isdigit():
+                            year = int(text_season)
+                            provider_season = f"{year}-{str(year + 1)[-2:]}"
                     for code in dict.fromkeys(translated):
                         rows.extend(
                             provider.fixtures(
