@@ -28,7 +28,7 @@ from app.config import settings
 from app.leagues import MAJOR_LEAGUES
 from app.data_providers import build_provider_from_settings
 from app.engine import FootballProbabilityEngine
-from app.schemas import TeamForm
+from app.schemas import Fixture, TeamForm
 from app.corners_cards import CornersCardsEngine
 from app.slips import SlipGenerator
 from app.services.ai_groq import GroqExplainer
