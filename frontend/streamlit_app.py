@@ -1288,14 +1288,43 @@ else:
                                 reason += " " + " ".join(agent_run.errors[:2])
                             st.warning(reason)
 
-                    if pkg == "Daily":
-                        generated = slips.daily(package_fixtures, ai_decisions=ai_decisions)
-                    elif pkg == "Weekly":
-                        generated = slips.weekly(package_fixtures, ai_decisions=ai_decisions)
-                    elif pkg == "Monthly":
-                        generated = slips.monthly(package_fixtures, ai_decisions=ai_decisions)
-                    else:
-                        generated = []
+                    effective_ai_decisions = ai_decisions
+
+                    try:
+                        if pkg == "Daily":
+                            generated = slips.daily(package_fixtures, ai_decisions=effective_ai_decisions)
+                        elif pkg == "Weekly":
+                            generated = slips.weekly(package_fixtures, ai_decisions=effective_ai_decisions)
+                        elif pkg == "Monthly":
+                            generated = slips.monthly(package_fixtures, ai_decisions=effective_ai_decisions)
+                        else:
+                            generated = []
+                    except ValueError as ai_package_error:
+                        if effective_ai_decisions is None:
+                            raise
+                        # AI review is an approval layer, not a reason to publish
+                        # a broken package. Re-run the deterministic generator
+                        # from the same verified fixture pool if AI-approved
+                        # selections cannot satisfy the package-level constraints
+                        # (minimum size, unique fixtures, major-league coverage,
+                        # and five distinct slips).
+                        st.warning(
+                            "The AI-approved selections could not satisfy the full "
+                            f"{pkg.lower()} package rules ({ai_package_error}). "
+                            "The app is falling back to the statistical model for "
+                            "this package rather than padding or fabricating picks."
+                        )
+                        effective_ai_decisions = None
+                        if pkg == "Daily":
+                            generated = slips.daily(package_fixtures)
+                        elif pkg == "Weekly":
+                            generated = slips.weekly(package_fixtures)
+                        elif pkg == "Monthly":
+                            generated = slips.monthly(package_fixtures)
+                        else:
+                            generated = []
+
+                    ai_decisions = effective_ai_decisions
 
                 if generated:
                     top_limit = {"Daily": 5, "Weekly": 10, "Monthly": 15}.get(pkg, 5)
