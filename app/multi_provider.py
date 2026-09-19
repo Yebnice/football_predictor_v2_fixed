@@ -167,6 +167,17 @@ class CompositeFootballProvider(FootballProvider):
                     rows = provider.fixtures(
                         start, end, live=live, league=provider_league, season=provider_season
                     )
+                elif name in {"bsd", "bzzoiro", "bzzoiro-sports-data"} and api_league_selection:
+                    tokens = [str(league)] if isinstance(league, int) else [
+                        x.strip() for x in str(league).split(",") if x.strip()
+                    ]
+                    rows = []
+                    for token in dict.fromkeys(tokens):
+                        rows.extend(
+                            provider.fixtures(
+                                start, end, live=live, league=token, season=season
+                            )
+                        )
                 elif name in {"bigballsdata", "big-balls-data", "bigballs"} and api_league_selection:
                     tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
                     mapped = [API_FOOTBALL_TO_BIGBALLS[token] for token in tokens if token in API_FOOTBALL_TO_BIGBALLS]
