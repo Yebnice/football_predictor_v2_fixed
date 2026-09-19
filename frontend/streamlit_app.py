@@ -355,14 +355,14 @@ def _fetch_all_leagues_with_majors(start_dt, end_dt, season, minimum, priority_i
         return " ".join(str(getattr(fx, "league", "") or "").casefold().replace("-", " ").split())
 
     major_aliases = {
-        "39": ("premier league", "england"),
-        "140": ("laliga", "la liga", "spain"),
-        "78": ("bundesliga", "germany"),
-        "135": ("serie a", "italy"),
-        "61": ("ligue 1", "france"),
-        "144": ("jupiler", "jupiler pro league", "belgium"),
-        "88": ("eredivisie", "netherlands"),
-        "94": ("primeira liga", "portugal"),
+        "39": ("premier league",),
+        "140": ("laliga", "la liga"),
+        "78": ("bundesliga",),
+        "135": ("serie a",),
+        "61": ("ligue 1",),
+        "144": ("jupiler", "jupiler pro league"),
+        "88": ("eredivisie",),
+        "94": ("primeira liga",),
     }
 
     for league_id in core_major_ids:
