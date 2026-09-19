@@ -293,6 +293,10 @@ class AIPredictionAgent:
             if detailed:
                 evidence["fixture_details_normalized"] = _fixture_summary(detailed)
                 evidence["fixture_stats"] = _compact_provider_payload(detailed.stats, 1400)
+                evidence["odds_1x2"] = {
+                    key: value for key, value in (detailed.odds or {}).items()
+                    if key in {"home", "draw", "away"}
+                }
                 evidence["provider"] = (detailed.stats or {}).get("provider")
         except Exception as exc:
             evidence["fixture_by_id_error"] = _safe_text(exc, 250)
@@ -301,13 +305,6 @@ class AIPredictionAgent:
             raw_details = self.provider.fixture_details(fx.fixture_id)
             if raw_details:
                 evidence["fixture_details"] = _compact_provider_payload(raw_details, 1200)
-        except Exception:
-            pass
-
-        try:
-            raw_odds = self.provider.odds(fx.fixture_id)
-            if raw_odds:
-                evidence["odds"] = _compact_provider_payload(raw_odds, 1000)
         except Exception:
             pass
 
@@ -347,8 +344,9 @@ class AIPredictionAgent:
             "A review_score is your confidence in the review decision, NOT the event "
             "probability. The statistical model probability is the authoritative "
             "quantitative input. Prefer rejection over a speculative approval when "
-            "evidence is stale, contradictory, or materially incomplete. Return one "
-            "decision for every fixture presented.\n\n"
+            "the evidence contradicts the candidate, but do not reject solely because "
+            "optional deep evidence is unavailable; instead record that limitation in "
+            "risk_flags. Return one decision for every fixture presented.\n\n"
             + json.dumps(records, ensure_ascii=False, default=str)
         )
 
