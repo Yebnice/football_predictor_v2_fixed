@@ -201,10 +201,40 @@ class CompositeFootballProvider(FootballProvider):
                     else:
                         rows = []
                 elif name in {"allsportsapi", "all-sports-api", "allsports"} and api_league_selection:
-                    # AllSportsAPI uses its own league IDs. This adapter does not
-                    # currently expose a league catalogue, so skip numeric-league
-                    # translation here and allow the next mapped provider to try.
+                    # AllSportsAPI uses its own league IDs. Resolve the public
+                    # API-Football competition selection through AllSports'
+                    # documented Leagues catalogue instead of sending an API-
+                    # Football id directly into the provider namespace.
+                    league_names = {
+                        "39": "Premier League",
+                        "140": "LaLiga",
+                        "78": "Bundesliga",
+                        "135": "Serie A",
+                        "61": "Ligue 1",
+                        "88": "Eredivisie",
+                        "94": "Primeira Liga",
+                    }
                     rows = []
+                    catalogue = provider.leagues()
+                    for token in ([str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]):
+                        target = league_names.get(token)
+                        if not target:
+                            continue
+                        target_norm = " ".join(target.casefold().split())
+                        resolved_id = None
+                        for item in catalogue:
+                            if not isinstance(item, dict):
+                                continue
+                            candidate = " ".join(str(item.get("league_name") or item.get("name") or "").casefold().split())
+                            if candidate == target_norm or candidate.startswith(target_norm) or target_norm in candidate:
+                                resolved_id = item.get("league_key") or item.get("id")
+                                break
+                        if resolved_id is not None:
+                            rows.extend(
+                                provider.fixtures(
+                                    start, end, live=live, league=str(resolved_id), season=season
+                                )
+                            )
                 elif name in {"openfootball", "open-football", "football-json"} and api_league_selection:
                     tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
                     translated = [API_FOOTBALL_TO_OPENFOOTBALL[token] for token in tokens if token in API_FOOTBALL_TO_OPENFOOTBALL]
