@@ -58,6 +58,9 @@ class PipelineResult:
     model_trained: bool = False
     predictions_created: int = 0
     ai_approved: int = 0
+    ai_reviewed: int = 0
+    ai_providers: tuple[str, ...] = ()
+    ai_review_errors: list[str] | None = None
     settled_predictions: int = 0
     validation_log_loss: float | None = None
     calibration_ece: float | None = None
@@ -960,6 +963,18 @@ def run_background_pipeline(
                             model_version=model_version,
                         )
                 result.ai_approved = int(agent_run.approved_fixtures)
+                result.ai_reviewed = int(agent_run.reviewed_fixtures)
+                result.ai_providers = tuple(agent_run.providers_used)
+                result.ai_review_errors = list(agent_run.errors)
+                if agent_run.errors:
+                    result.errors.extend(agent_run.errors)
+                if agent_run.reviewed_fixtures and agent_run.approved_fixtures == 0:
+                    logger.warning(
+                        "AI review produced 0 approvals: reviewed=%s providers=%s errors=%s",
+                        agent_run.reviewed_fixtures,
+                        agent_run.providers_used,
+                        agent_run.errors,
+                    )
             else:
                 # Never publish unreviewed predictions.
                 for fx in forecast_fx:
@@ -978,6 +993,9 @@ def run_background_pipeline(
             "model_version": result.model_version,
             "predictions_created": result.predictions_created,
             "ai_approved": result.ai_approved,
+            "ai_reviewed": result.ai_reviewed,
+            "ai_providers": list(result.ai_providers),
+            "ai_review_errors": result.ai_review_errors or [],
             "settled_predictions": result.settled_predictions,
             "validation_log_loss": result.validation_log_loss,
             "calibration_ece": result.calibration_ece,
