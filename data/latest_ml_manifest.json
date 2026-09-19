@@ -1,0 +1,595 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-19T21:04:45.327858+00:00",
+  "source": "github_actions_background_ml",
+  "model": {
+    "version": "poisson-20260919205934-0e604341",
+    "algorithm": "poisson_regression",
+    "trained_at": 1789850000.0,
+    "training_rows": 252,
+    "validation_log_loss": 1.4355652719894472,
+    "calibration_ece": 0.43612763550827777
+  },
+  "last_run": {
+    "id": "4b449557-5d94-4f33-81a3-030b5b86bcc5",
+    "run_type": "daily",
+    "started_at": 1789850000.0,
+    "completed_at": 1789850000.0,
+    "status": "completed",
+    "summary_json": "{\"collected_matches\":141,\"training_rows\":252,\"model_trained\":true,\"model_version\":\"poisson-20260919205934-0e604341\",\"predictions_created\":96,\"ai_approved\":24,\"ai_reviewed\":24,\"ai_providers\":[\"gemini\",\"groq\"],\"ai_review_errors\":[\"Gemini batch 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\",\"Gemini batch 2: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\"],\"settled_predictions\":0,\"validation_log_loss\":1.4355652719894472,\"calibration_ece\":0.43612763550827777,\"performance_log_loss\":null,\"feature_drift_score\":null,\"drift_alert\":false,\"errors\":[\"Gemini batch 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\",\"Gemini batch 2: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\"]}",
+    "errors_json": "[\"Gemini batch 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\",\"Gemini batch 2: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\"]"
+  },
+  "drift": {
+    "id": "c78532bb-b5c3-4a08-a6ac-d72cc132e5f8",
+    "checked_at": 1789850000.0,
+    "model_version": "poisson-20260919205934-0e604341",
+    "feature_drift_score": null,
+    "performance_log_loss": null,
+    "validation_log_loss": 1.43557,
+    "alert": 0,
+    "details_json": "{\"performance\":{\"validation_log_loss\":1.4355652719894472,\"performance_log_loss\":null,\"prediction_count\":0,\"performance_ratio\":null},\"feature\":{\"reason\":\"Fewer than 20 feature snapshots\"}}"
+  },
+  "approved_predictions_count": 24,
+  "predictions": [
+    {
+      "fixture_id": "openfootball-2026_27-en.1-46",
+      "kickoff_utc": "2026-09-20T14:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "AFC Bournemouth",
+      "away_team": "Liverpool FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.737545,
+      "fair_odds": 1.3559,
+      "model_probability": 0.737545,
+      "home_lambda": 1.63417,
+      "away_lambda": 1.37858,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Highest model probability (0.7375) among candidates, no contradictory evidence; approve.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-48",
+      "kickoff_utc": "2026-09-20T14:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Manchester City FC",
+      "away_team": "Sunderland AFC",
+      "market": "Draw No Bet",
+      "selection": "Home",
+      "probability": 0.729366,
+      "fair_odds": 1.3711,
+      "model_probability": 0.729366,
+      "home_lambda": 1.8643,
+      "away_lambda": 1.06674,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Highest model probability (0.7294) among candidates, no contradictory evidence, deep evidence unavailable.",
+      "risk_flags": [
+        "missing_deep_evidence"
+      ],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-47",
+      "kickoff_utc": "2026-09-20T14:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Leeds United FC",
+      "away_team": "Crystal Palace FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.732756,
+      "fair_odds": 1.3647,
+      "model_probability": 0.732756,
+      "home_lambda": 1.65776,
+      "away_lambda": 1.07361,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7328 is the top candidate and no contradictory information exists; approve Double Chance 12.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-49",
+      "kickoff_utc": "2026-09-20T16:30:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Fulham FC",
+      "away_team": "Manchester United FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.735921,
+      "fair_odds": 1.3588,
+      "model_probability": 0.735921,
+      "home_lambda": 1.60999,
+      "away_lambda": 1.38024,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7359 is the highest among candidates and no contradictory evidence is present; therefore the Double Chance 12 selection is acceptable.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-50",
+      "kickoff_utc": "2026-10-10T12:30:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Arsenal FC",
+      "away_team": "Leeds United FC",
+      "market": "Total Goals",
+      "selection": "Under 3.5",
+      "probability": 0.669044,
+      "fair_odds": 1.4947,
+      "model_probability": 0.669044,
+      "home_lambda": 1.95931,
+      "away_lambda": 0.943896,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.88,
+      "ai_rationale": "Candidate 0 holds the highest model probability (0.669) and lacks any opposing evidence; deep evidence absent.",
+      "risk_flags": [
+        "missing_deep_evidence"
+      ],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-52",
+      "kickoff_utc": "2026-10-10T15:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Chelsea FC",
+      "away_team": "AFC Bournemouth",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.742296,
+      "fair_odds": 1.3472,
+      "model_probability": 0.742296,
+      "home_lambda": 1.74695,
+      "away_lambda": 1.19263,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7423 is highest; no conflicting data; deep evidence missing xG values.",
+      "risk_flags": [
+        "missing_xg"
+      ],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-54",
+      "kickoff_utc": "2026-10-10T15:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Aston Villa FC",
+      "away_team": "Brentford FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.732101,
+      "fair_odds": 1.3659,
+      "model_probability": 0.732101,
+      "home_lambda": 1.57894,
+      "away_lambda": 1.33622,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7321 is highest; with no opposing evidence, the Double Chance 12 selection is approved.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-51",
+      "kickoff_utc": "2026-10-10T15:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Sunderland AFC",
+      "away_team": "Brighton & Hove Albion FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.737147,
+      "fair_odds": 1.3566,
+      "model_probability": 0.737147,
+      "home_lambda": 1.5368,
+      "away_lambda": 1.51116,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Highest model probability (0.7371) among candidates, no contradictory evidence; approve.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-53",
+      "kickoff_utc": "2026-10-10T15:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Ipswich Town FC",
+      "away_team": "Fulham FC",
+      "market": "Total Goals",
+      "selection": "Over 1.5",
+      "probability": 0.746618,
+      "fair_odds": 1.3394,
+      "model_probability": 0.746618,
+      "home_lambda": 1.51635,
+      "away_lambda": 1.09308,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7466 is high and no contradictory evidence; deep evidence lacks xG but does not affect decision.",
+      "risk_flags": [],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-55",
+      "kickoff_utc": "2026-10-10T17:30:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Manchester United FC",
+      "away_team": "Tottenham Hotspur FC",
+      "market": "Tottenham Hotspur FC Goals",
+      "selection": "Under 1.5",
+      "probability": 0.728274,
+      "fair_odds": 1.3731,
+      "model_probability": 0.728274,
+      "home_lambda": 1.93468,
+      "away_lambda": 1.02035,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.91,
+      "ai_rationale": "Candidate 0 has the highest model probability (0.7283) and no conflicting information; deep evidence missing.",
+      "risk_flags": [
+        "missing_deep_evidence"
+      ],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-56",
+      "kickoff_utc": "2026-10-11T14:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Hull City AFC",
+      "away_team": "Everton FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.734943,
+      "fair_odds": 1.3607,
+      "model_probability": 0.734943,
+      "home_lambda": 1.68154,
+      "away_lambda": 1.02717,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7349 is the highest and there is no evidence contradicting the Double Chance 12 bet.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-57",
+      "kickoff_utc": "2026-10-11T14:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Crystal Palace FC",
+      "away_team": "Nottingham Forest FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.739579,
+      "fair_odds": 1.3521,
+      "model_probability": 0.739579,
+      "home_lambda": 1.51457,
+      "away_lambda": 1.57805,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Highest model probability (0.7396) among candidates, no contradictory evidence; approve.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-58",
+      "kickoff_utc": "2026-10-11T16:30:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Liverpool FC",
+      "away_team": "Manchester City FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.746198,
+      "fair_odds": 1.3401,
+      "model_probability": 0.746198,
+      "home_lambda": 1.74864,
+      "away_lambda": 1.3973,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7462 is highest; no contradictory evidence; deep evidence lacks xG values, flagged as missing data.",
+      "risk_flags": [
+        "missing_xg"
+      ],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-59",
+      "kickoff_utc": "2026-10-12T20:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Coventry City FC",
+      "away_team": "Newcastle United FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.723289,
+      "fair_odds": 1.3826,
+      "model_probability": 0.723289,
+      "home_lambda": 1.24905,
+      "away_lambda": 1.50599,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Candidate 0 presents the highest model probability (0.7233) with no contradictory data; deep evidence not provided.",
+      "risk_flags": [
+        "missing_deep_evidence"
+      ],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-60",
+      "kickoff_utc": "2026-10-17T12:30:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Everton FC",
+      "away_team": "Chelsea FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.742168,
+      "fair_odds": 1.3474,
+      "model_probability": 0.742168,
+      "home_lambda": 1.72239,
+      "away_lambda": 1.31012,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7422 is highest; evidence aligns; deep evidence missing xG values.",
+      "risk_flags": [
+        "missing_xg"
+      ],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-63",
+      "kickoff_utc": "2026-10-17T15:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Brentford FC",
+      "away_team": "Liverpool FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.743331,
+      "fair_odds": 1.3453,
+      "model_probability": 0.743331,
+      "home_lambda": 1.74639,
+      "away_lambda": 1.27086,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7433 is highest; evidence consistent; deep evidence missing xG values.",
+      "risk_flags": [
+        "missing_xg"
+      ],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-61",
+      "kickoff_utc": "2026-10-17T15:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Fulham FC",
+      "away_team": "Hull City AFC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.740206,
+      "fair_odds": 1.351,
+      "model_probability": 0.740206,
+      "home_lambda": 1.67309,
+      "away_lambda": 1.37581,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Highest model probability (0.7402) among candidates, no contradictory evidence; approve.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-62",
+      "kickoff_utc": "2026-10-17T15:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Manchester City FC",
+      "away_team": "Ipswich Town FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.746527,
+      "fair_odds": 1.3395,
+      "model_probability": 0.746527,
+      "home_lambda": 1.79497,
+      "away_lambda": 1.18455,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7465 is high and no contradictory evidence; deep evidence lacks xG but does not affect decision.",
+      "risk_flags": [],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-64",
+      "kickoff_utc": "2026-10-17T17:30:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Newcastle United FC",
+      "away_team": "Aston Villa FC",
+      "market": "Double Chance",
+      "selection": "1X",
+      "probability": 0.74932,
+      "fair_odds": 1.3345,
+      "model_probability": 0.74932,
+      "home_lambda": 1.6346,
+      "away_lambda": 1.12571,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7493 is high and no contradictory evidence; deep evidence lacks xG but does not affect decision.",
+      "risk_flags": [],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-67",
+      "kickoff_utc": "2026-10-18T14:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Brighton & Hove Albion FC",
+      "away_team": "Crystal Palace FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.7473,
+      "fair_odds": 1.3382,
+      "model_probability": 0.7473,
+      "home_lambda": 1.80428,
+      "away_lambda": 1.08286,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7473 is high and no contradictory evidence; deep evidence lacks xG but does not affect decision.",
+      "risk_flags": [],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-65",
+      "kickoff_utc": "2026-10-18T14:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "AFC Bournemouth",
+      "away_team": "Sunderland AFC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.732771,
+      "fair_odds": 1.3647,
+      "model_probability": 0.732771,
+      "home_lambda": 1.60298,
+      "away_lambda": 1.30405,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7328 is the highest; no conflicting data, so the Double Chance 12 bet is approved.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-66",
+      "kickoff_utc": "2026-10-18T14:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Leeds United FC",
+      "away_team": "Manchester United FC",
+      "market": "Double Chance",
+      "selection": "1X",
+      "probability": 0.740491,
+      "fair_odds": 1.3505,
+      "model_probability": 0.740491,
+      "home_lambda": 1.71429,
+      "away_lambda": 1.21297,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Highest model probability (0.7405) among candidates, no contradictory evidence; approve.",
+      "risk_flags": [],
+      "reviewers": [
+        "gemini",
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-68",
+      "kickoff_utc": "2026-10-18T16:30:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Nottingham Forest FC",
+      "away_team": "Arsenal FC",
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.741755,
+      "fair_odds": 1.3482,
+      "model_probability": 0.741755,
+      "home_lambda": 1.67381,
+      "away_lambda": 1.42248,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7418 is highest; no contradictory information; deep evidence missing xG values.",
+      "risk_flags": [
+        "missing_xg"
+      ],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-69",
+      "kickoff_utc": "2026-10-19T20:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Tottenham Hotspur FC",
+      "away_team": "Coventry City FC",
+      "market": "Coventry City FC Goals",
+      "selection": "Under 1.5",
+      "probability": 0.74718,
+      "fair_odds": 1.3384,
+      "model_probability": 0.74718,
+      "home_lambda": 1.41161,
+      "away_lambda": 0.96895,
+      "candidate_index": 0,
+      "model_version": "poisson-20260919205934-0e604341",
+      "ai_review_score": 0.92,
+      "ai_rationale": "Model probability 0.7472 is high and no contradictory evidence; deep evidence lacks xG but does not affect decision.",
+      "risk_flags": [],
+      "reviewers": [
+        "groq"
+      ]
+    }
+  ]
+}
