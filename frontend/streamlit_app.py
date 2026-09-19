@@ -17,6 +17,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
+import httpx
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -100,6 +101,14 @@ database_url = (
     _streamlit_secret("DATABASE_URL", "")
     or _streamlit_secret("DB_PATH", "")
 )
+# The Render FastAPI service is the single source of truth for background ML
+# state in production. The default matches the service name declared in
+# render.yaml; override with BACKEND_API_BASE_URL in Streamlit Cloud if the
+# deployed service uses a custom Render URL.
+backend_api_base_url = _streamlit_secret(
+    "BACKEND_API_BASE_URL",
+    getattr(settings, "backend_api_base_url", "https://football-predictor-api.onrender.com"),
+).rstrip("/")
 
 # Pydantic settings are initialized before Streamlit secrets are available to
 # this deployment path. Mirror the runtime secrets into the shared settings
@@ -1148,10 +1157,58 @@ except Exception as e:
     st.error(f"Failed to fetch fixtures: {str(e)}")
     fixtures = []
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _fetch_background_ml_state(base_url: str):
+    """Read background ML state from the canonical FastAPI service."""
+    url = f"{base_url}/ml/status"
+    response = httpx.get(url, timeout=15.0)
+    response.raise_for_status()
+    return response.json()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _fetch_background_approved_predictions(base_url: str, days: int):
+    """Read only AI-approved predictions from the canonical FastAPI service."""
+    response = httpx.get(
+        f"{base_url}/ml/predictions",
+        params={"days": int(days), "limit": 1000},
+        timeout=15.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, list) else []
+
+
 # Background ML status
-active_ml = ml_store.get_active_ml_model()
-latest_ml_drift = ml_store.latest_ml_drift()
-latest_ml_run = (ml_store.list_ml_runs(limit=1) or [None])[0]
+remote_ml_error = ""
+try:
+    remote_ml_status = _fetch_background_ml_state(backend_api_base_url)
+    remote_model = remote_ml_status.get("model") or {}
+    remote_last_run = remote_ml_status.get("last_run")
+    remote_drift = remote_ml_status.get("drift")
+    active_ml = {
+        "model_version": remote_model.get("version"),
+        "algorithm": remote_model.get("algorithm"),
+        "training_rows": remote_model.get("training_rows", 0),
+        "metrics_json": json.dumps({
+            "log_loss": remote_model.get("validation_log_loss"),
+            "calibration_ece": remote_model.get("calibration_ece"),
+        }),
+    } if remote_model.get("version") else None
+    latest_ml_run = remote_last_run
+    latest_ml_drift = remote_drift
+except Exception as exc:
+    remote_ml_error = str(exc)
+    # Development fallback only. Production will display the backend error
+    # instead of silently reading a different local database.
+    if str(getattr(settings, "app_env", "")).strip().lower() == "production":
+        active_ml = None
+        latest_ml_drift = None
+        latest_ml_run = None
+    else:
+        active_ml = ml_store.get_active_ml_model()
+        latest_ml_drift = ml_store.latest_ml_drift()
+        latest_ml_run = (ml_store.list_ml_runs(limit=1) or [None])[0]
 ml_metrics = {}
 if active_ml:
     try:
@@ -1176,6 +1233,13 @@ render_markdown(f"""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+if remote_ml_error and str(getattr(settings, "app_env", "")).strip().lower() == "production":
+    st.error(
+        "Background ML service is unavailable. The slip generator is intentionally "
+        "blocked from using a separate local database, so predictions cannot be "
+        "mixed across runtimes. Check BACKEND_API_BASE_URL/Render health."
+    )
 
 # Fixture pool overview
 render_markdown(f"""
@@ -1246,48 +1310,31 @@ else:
         if st.button("🎯 Generate Prediction Package", type="primary", use_container_width=True):
             try:
                 with st.spinner("Loading background-approved predictions..."):
-                    # Build the slip pool directly from approved ML rows.
-                    # Do not re-fetch live provider fixtures here: provider fixture IDs
-                    # and even team/UTC representations can differ from the background
-                    # source, which previously caused a valid approved pool to appear as 0.
-                    approval_start = start
-                    approval_end = end
+                    # Build the slip pool directly from the canonical backend
+                    # API. This removes the last possible split-brain path between
+                    # GitHub Actions/Render and Streamlit Cloud.
+                    forecast_days = {"Daily": 1, "Weekly": 7, "Monthly": 31}.get(pkg, 1)
+                    try:
+                        approved_rows = _fetch_background_approved_predictions(
+                            backend_api_base_url,
+                            forecast_days,
+                        )
+                    except Exception as exc:
+                        if str(getattr(settings, "app_env", "")).strip().lower() == "production":
+                            raise RuntimeError(
+                                "The canonical background ML API could not be reached: "
+                                f"{exc}"
+                            ) from exc
+                        approved_rows = []
 
-                    # Read the approved pool without SQL date/model filters. The
-                    # background and dashboard share Postgres, but ISO timestamp
-                    # formatting and model-version changes can otherwise make a
-                    # valid approved row disappear from a filtered query.
-                    all_approved_rows = ml_store.list_ml_predictions(
-                        limit=5000,
-                        statuses=("approved",),
-                    )
-
-                    def _row_kickoff(row):
-                        try:
-                            return datetime.fromisoformat(
-                                str(row.get("kickoff_utc") or "").replace("Z", "+00:00")
-                            ).astimezone(timezone.utc)
-                        except Exception:
-                            return None
-
-                    def _rows_in_window(window_end):
-                        out = []
-                        for row in all_approved_rows:
-                            kickoff = _row_kickoff(row)
-                            if kickoff is not None and approval_start <= kickoff <= window_end:
-                                out.append(row)
-                        out.sort(key=lambda row: (_row_kickoff(row) or datetime.max.replace(tzinfo=timezone.utc), str(row.get("predicted_at") or "")))
-                        return out
-
-                    approved_rows = _rows_in_window(approval_end)
-
-                    # Daily normally means the next 24 hours. On a low-fixture day,
-                    # use the next available approved fixtures from the same trained
-                    # 31-day forecast so the package does not falsely report an empty
-                    # database-backed pool.
+                    # Daily normally means the next 24 hours. If fewer than 10
+                    # approved fixtures exist today, use the next available approved
+                    # fixtures from the same 31-day forecast horizon.
                     if pkg == "Daily" and len(approved_rows) < 10:
-                        approval_end = start + timedelta(days=31)
-                        approved_rows = _rows_in_window(approval_end)
+                        approved_rows = _fetch_background_approved_predictions(
+                            backend_api_base_url,
+                            31,
+                        )
 
                     def _fixture_from_approved(row):
                         try:
@@ -1306,8 +1353,6 @@ else:
                             or league.casefold() in {"unknown", "n/a", "none"}
                             or not home
                             or not away
-                            or kickoff < approval_start
-                            or kickoff > approval_end
                         ):
                             return None
                         try:
