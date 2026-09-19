@@ -13,6 +13,17 @@ PERIOD_RULES = {
     "monthly": {"min_matches": 20, "max_matches": 50, "slips": 5},
 }
 
+CORE_MAJOR_LEAGUE_ALIASES = {
+    "England — Premier League": ("premier league",),
+    "Spain — LaLiga": ("laliga", "la liga"),
+    "Germany — Bundesliga": ("bundesliga",),
+    "Italy — Serie A": ("serie a",),
+    "France — Ligue 1": ("ligue 1",),
+    "Belgium — Jupiler Pro League": ("jupiler",),
+    "Netherlands — Eredivisie": ("eredivisie",),
+    "Portugal — Primeira Liga": ("primeira liga",),
+}
+
 
 def _tip_eligible(market) -> bool:
     if market.market == "Total Goals":
@@ -158,9 +169,49 @@ class SlipGenerator:
             selected: list[dict] = []
             slip_family_counts: Counter[str] = Counter()
 
-            # Seed the slip with several different outcome families when the
-            # available pool supports them. This prevents a package from
-            # collapsing into dozens of "Under" selections.
+            seeded_fixtures: set[str] = set()
+
+            # Major-league coverage is a package rule, not a suggestion. When a
+            # core major has eligible fixtures in the requested period, reserve
+            # one different fixture from that competition in every slip that
+            # has room. This keeps "all leagues" broad while preventing the
+            # package from silently becoming dominated by one or two feeds.
+            major_to_fixtures: dict[str, list[str]] = defaultdict(list)
+            for fixture_id in fixture_ids:
+                for item in by_fixture[fixture_id]:
+                    league_text = " ".join(str(item.get("league") or "").casefold().replace("-", " ").split())
+                    for major_name, aliases in CORE_MAJOR_LEAGUE_ALIASES.items():
+                        if any(alias in league_text for alias in aliases):
+                            major_to_fixtures[major_name].append(fixture_id)
+                            break
+
+            major_order = [name for name in CORE_MAJOR_LEAGUE_ALIASES if major_to_fixtures.get(name)]
+            # Rotate the starting competition while still covering every
+            # available core major once per slip whenever the target permits it.
+            major_order = major_order[slip_index - 1:] + major_order[:slip_index - 1]
+            for major_name in major_order:
+                if len(selected) >= target:
+                    break
+                candidates = [
+                    fid for fid in dict.fromkeys(major_to_fixtures[major_name])
+                    if fid not in seeded_fixtures
+                ]
+                if not candidates:
+                    continue
+                candidates.sort(key=lambda fid: (used_fixture_counts[fid], fid))
+                fid = candidates[rng.randrange(min(len(candidates), 5))]
+                family_candidates = by_fixture[fid]
+                chosen = rng.choice(family_candidates)
+                selected.append(dict(chosen))
+                seeded_fixtures.add(fid)
+                slip_family_counts[chosen["family"]] += 1
+                used_fixture_counts[fid] += 1
+                used_exact_outcomes[(fid, chosen["market"], chosen["selection"])] += 1
+                used_families[chosen["family"]] += 1
+
+            # Then seed several different outcome families. This prevents a
+            # package from collapsing into dozens of identical Under/Double
+            # Chance selections after the required league coverage is met.
             family_to_fixtures: dict[str, list[str]] = defaultdict(list)
             for fixture_id in fixture_ids:
                 for item in by_fixture[fixture_id]:
@@ -169,9 +220,8 @@ class SlipGenerator:
             family_order = list(family_to_fixtures)
             rng.shuffle(family_order)
             desired_family_count = min(4, len(family_order), target)
-            seeded_fixtures: set[str] = set()
             for family in family_order:
-                if len(slip_family_counts) >= desired_family_count:
+                if len(slip_family_counts) >= desired_family_count or len(selected) >= target:
                     break
                 candidates = [
                     fid for fid in dict.fromkeys(family_to_fixtures[family])
@@ -179,7 +229,6 @@ class SlipGenerator:
                 ]
                 if not candidates:
                     continue
-                # Prefer fixtures that have been used less often in earlier slips.
                 candidates.sort(key=lambda fid: (used_fixture_counts[fid], fid))
                 fid = candidates[rng.randrange(min(len(candidates), 5))]
                 family_candidates = [
