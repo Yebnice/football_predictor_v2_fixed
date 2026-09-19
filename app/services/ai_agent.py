@@ -404,9 +404,9 @@ class AIPredictionAgent:
                 "schema": DECISION_SCHEMA,
             },
         }
-        response = self._groq_client.chat.completions.create(
-            model=self.groq_model,
-            messages=[
+        request_kwargs = {
+            "model": self.groq_model,
+            "messages": [
                 {
                     "role": "system",
                     "content": (
@@ -416,11 +416,15 @@ class AIPredictionAgent:
                 },
                 {"role": "user", "content": prompt},
             ],
-            response_format=response_format,
-            temperature=0.1,
-            max_tokens=6000,
-            reasoning_effort="medium",
-        )
+            "response_format": response_format,
+            "temperature": 0.1,
+            "max_tokens": 6000,
+        }
+        # reasoning_effort is documented for GPT-OSS models. Do not send it
+        # to arbitrary custom Groq model IDs configured by a deployment.
+        if self.groq_model.startswith("openai/gpt-oss-"):
+            request_kwargs["reasoning_effort"] = "medium"
+        response = self._groq_client.chat.completions.create(**request_kwargs)
         raw = (response.choices[0].message.content or "").strip()
         return self._parse(json.loads(raw)) if raw else []
 
