@@ -158,6 +158,7 @@ def providers():
         "active": names,
         "configured_chain": [x.strip() for x in settings.football_provider_chain.split(",") if x.strip()],
         "notes": {
+            "bsd": {"requires_key": True, "live_capable": True, "summary": "BSD free football API: fixtures, live scores, xG/stats, lineups, predictions and consensus odds; 7,500 requests/day on the free tier. Per-bookmaker odds require Football Unlimited."},
             "openfootball": {"requires_key": False, "live_capable": False, "summary": "Free public-domain fixtures/results datasets; latest-season files are published by league code and used here for fixtures plus season-to-date form."},
             "api-football": {"requires_key": True, "live_capable": True, "summary": "Free plan currently 100 requests/day; richer odds/events/lineups when a key is configured."},
             "football-data": {"requires_key": True, "live_capable": False, "summary": "Free registered plan currently 10 requests/min and delayed scores/schedules."},
