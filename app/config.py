@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     openfootball_base_url: str = "https://raw.githubusercontent.com/openfootball/football.json/master"
     # BSD (Bzzoiro Sports Data) free football API token. Set BSD_API_KEY in deployment secrets.
     bsd_api_key: str = ""
-    bsd_base_url: str = "https://sports.bzzoiro.com/api/v2"
+    bsd_base_url: str = "https://sports.bzzoiro.com/api/v2/"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     gemini_api_key: str = ""
