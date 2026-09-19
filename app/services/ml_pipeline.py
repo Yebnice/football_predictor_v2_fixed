@@ -671,7 +671,7 @@ def performance_and_drift(store: Store, model_version: str | None) -> tuple[floa
         metrics = {}
 
     settled = [
-        row for row in store.list_ml_predictions(limit=10000, statuses=("internal",))
+        row for row in store.list_ml_predictions(limit=10000, statuses=("internal", "settled_internal"))
         if str(row.get("model_version")) == model_version and row.get("settled_at")
     ]
     if settled:
