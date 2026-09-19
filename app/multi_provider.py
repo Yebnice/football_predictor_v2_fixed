@@ -182,11 +182,11 @@ class CompositeFootballProvider(FootballProvider):
                     tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
                     mapped = [API_FOOTBALL_TO_BIGBALLS[token] for token in tokens if token in API_FOOTBALL_TO_BIGBALLS]
                     rows = []
-                    if mapped:
-                        for slug in dict.fromkeys(mapped):
-                            rows.extend(provider.fixtures(start, end, live=live, league=slug, season=season))
-                    else:
-                        rows = provider.fixtures(start, end, live=live, league=None, season=season)
+                    # Never turn an unsupported numeric API-Football league into
+                    # an unfiltered Big Balls request: that could return fixtures
+                    # from a different competition and corrupt predictions.
+                    for slug in dict.fromkeys(mapped):
+                        rows.extend(provider.fixtures(start, end, live=live, league=slug, season=season))
                 elif name in {"football-data", "football-data-org", "football-data.org"} and api_league_selection:
                     tokens = [str(league)] if isinstance(league, int) else [x.strip() for x in str(league).split(",") if x.strip()]
                     translated = [API_FOOTBALL_TO_FOOTBALL_DATA[token] for token in tokens if token in API_FOOTBALL_TO_FOOTBALL_DATA]
