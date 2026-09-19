@@ -17,7 +17,7 @@ on:
 jobs:
   daily:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,9 +43,11 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
           DB_PATH: ${{ secrets.DB_PATH }}
-          FOOTBALL_PROVIDER: ${{ secrets.FOOTBALL_PROVIDER }}
-          FOOTBALL_PROVIDER_CHAIN: "openfootball,football-data,thesportsdb,bigballsdata,bsd,livescorefootball,api-football"
-          FOOTBALL_PROVIDER_MODE: "merge"
+          # ML training uses the fast, no-key OpenFootball dataset. The
+          # foreground dashboard keeps its broader provider chain separately.
+          FOOTBALL_PROVIDER: "openfootball"
+          FOOTBALL_PROVIDER_CHAIN: "openfootball"
+          FOOTBALL_PROVIDER_MODE: "fallback"
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_KEYS: ${{ secrets.API_FOOTBALL_KEYS }}
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
