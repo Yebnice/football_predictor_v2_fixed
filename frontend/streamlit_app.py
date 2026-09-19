@@ -1709,31 +1709,9 @@ if fixtures:
             )
             st.plotly_chart(fig_market, use_container_width=True, theme="streamlit")
 
-        # Top Predictions Table with Visual Indicators
-        render_markdown("""
-        <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border: 1px solid var(--border-color);">
-            <h4 style="margin: 0 0 1rem 0; color: var(--text-primary);">🏆 Top High-Confidence Predictions</h4>
-        </div>
-        """, unsafe_allow_html=True)
-
-        top_predictions = df.nlargest(5, "Probability")
-
-        for _, row in top_predictions.iterrows():
-            confidence_color = "#3D8B5F" if row["Probability"] >= 0.75 else "#C17F2E" if row["Probability"] >= 0.65 else "#C1503D"
-
-            render_markdown(f"""
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--background-card-alt); border-radius: 8px; margin-bottom: 0.5rem; border-left: 4px solid {confidence_color};">
-                <div>
-                    <div style="color: var(--text-primary); font-weight: 600;">{esc(row['Match'])}</div>
-                    <div style="color: var(--text-secondary); font-size: 0.85rem;">{esc(row['Market'])} - {esc(row['Selection'])}</div>
-                </div>
-                <div style="text-align: right;">
-                    <div style="color: {confidence_color}; font-weight: 700; font-size: 1.1rem;">{row['Probability']:.1%}</div>
-                    <div style="color: var(--text-secondary); font-size: 0.85rem;">@ {row['Fair Odds']:.2f}</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
+        # The period-specific Top High-Confidence Predictions section is rendered
+        # alongside the generated Daily/Weekly/Monthly package above.
+        
         # Probability vs Odds Scatter Plot
         render_markdown("""
         <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border: 1px solid var(--border-color);">
