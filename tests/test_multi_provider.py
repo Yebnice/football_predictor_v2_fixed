@@ -567,7 +567,10 @@ class TestProviderSettingsWiring(unittest.TestCase):
             bsd_base_url = "https://sports.bzzoiro.com/api/v2"
             football_provider_mode = "fallback"
         p = build_provider_from_settings(S())
-        self.assertEqual(p.provider_names, ["football-data", "thesportsdb"])
+        self.assertEqual(
+            p.provider_names,
+            ["bsd", "openfootball", "thesportsdb", "livescorefootball", "football-data"],
+        )
 
 if __name__ == "__main__":
     unittest.main()
