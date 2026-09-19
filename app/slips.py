@@ -86,7 +86,18 @@ class SlipGenerator:
         self.min_confidence = float(min_confidence)
         self.salt = salt
 
-    def eligible(self, fixtures: Iterable[Fixture]) -> list[dict]:
+    def eligible(
+        self,
+        fixtures: Iterable[Fixture],
+        ai_decisions: dict[str, dict] | None = None,
+    ) -> list[dict]:
+        """Build publishable candidates, optionally restricted to AI-approved outcomes.
+
+        When ai_decisions is supplied, a fixture must have an explicit approved
+        decision and the selected market/selection must exactly match a
+        statistical-model candidate for that fixture. This prevents the AI layer
+        from inventing a result that the quantitative engine did not price.
+        """
         pool: list[dict] = []
         for fx in fixtures:
             # Slip selections must carry a trustworthy competition label.
@@ -101,6 +112,21 @@ class SlipGenerator:
                 if _tip_eligible(m)
                 and self.min_confidence <= m.probability <= MAX_TIP_PROBABILITY
             ]
+
+            if ai_decisions is not None:
+                decision = ai_decisions.get(str(fx.fixture_id))
+                if not decision or not bool(decision.get("approved")):
+                    continue
+                target_market = str(decision.get("market", "") or "")
+                target_selection = str(decision.get("selection", "") or "")
+                candidates = [
+                    m for m in candidates
+                    if m.market == target_market and m.selection == target_selection
+                ]
+                if not candidates:
+                    # The AI may only select a market that the statistical
+                    # engine actually produced for this fixture.
+                    continue
             # Keep a small set of genuinely different outcomes per fixture.
             # This prevents the generator from seeing one fixture as hundreds of
             # equivalent candidates while still allowing outcome diversification.
@@ -141,6 +167,7 @@ class SlipGenerator:
         count: int | None,
         slips: int | None,
         now: datetime | None = None,
+        ai_decisions: dict[str, dict] | None = None,
     ) -> list[Slip]:
         period = period.strip().lower()
         rule = PERIOD_RULES.get(period)
@@ -152,7 +179,7 @@ class SlipGenerator:
         if requested_slips != 5:
             raise ValueError("This package format requires exactly 5 slips.")
 
-        pool = self.eligible(fixtures)
+        pool = self.eligible(fixtures, ai_decisions=ai_decisions)
         by_fixture: dict[str, list[dict]] = defaultdict(list)
         for item in pool:
             by_fixture[item["fixture_id"]].append(item)
@@ -477,11 +504,23 @@ class SlipGenerator:
 
         return out
 
-    def daily(self, fixtures: list[Fixture]) -> list[Slip]:
-        return self.generate("daily", fixtures, None, 5)
+    def daily(
+        self,
+        fixtures: list[Fixture],
+        ai_decisions: dict[str, dict] | None = None,
+    ) -> list[Slip]:
+        return self.generate("daily", fixtures, None, 5, ai_decisions=ai_decisions)
 
-    def weekly(self, fixtures: list[Fixture]) -> list[Slip]:
-        return self.generate("weekly", fixtures, None, 5)
+    def weekly(
+        self,
+        fixtures: list[Fixture],
+        ai_decisions: dict[str, dict] | None = None,
+    ) -> list[Slip]:
+        return self.generate("weekly", fixtures, None, 5, ai_decisions=ai_decisions)
 
-    def monthly(self, fixtures: list[Fixture]) -> list[Slip]:
-        return self.generate("monthly", fixtures, None, 5)
+    def monthly(
+        self,
+        fixtures: list[Fixture],
+        ai_decisions: dict[str, dict] | None = None,
+    ) -> list[Slip]:
+        return self.generate("monthly", fixtures, None, 5, ai_decisions=ai_decisions)
