@@ -894,6 +894,47 @@ else:
             except Exception as exc:
                 st.error(f"❌ Failed to generate package: {str(exc)}")
 
+    # Saved-slip reader: JSON is the package interchange format. This lets
+    # the same Streamlit app open a downloaded individual slip or the combined
+    # five-slip package without requiring a separate JSON viewer.
+    with st.expander("📂 Read a saved slip JSON", expanded=False):
+        uploaded_slip = st.file_uploader(
+            "Upload an individual slip or a full 5-slip package",
+            type=["json"],
+            key="saved_slip_json",
+        )
+        if uploaded_slip is not None:
+            try:
+                saved_payload = json.load(uploaded_slip)
+                saved_slips = saved_payload.get("slips") if isinstance(saved_payload, dict) else None
+                if isinstance(saved_slips, list):
+                    st.success(f"Loaded {len(saved_slips)} slip(s).")
+                    for saved in saved_slips:
+                        if not isinstance(saved, dict):
+                            continue
+                        selections = saved.get("selections") or []
+                        st.markdown(
+                            f"**{str(saved.get('period', 'Slip')).title()} Slip #{saved.get('slip_number', '—')}** "
+                            f"— {len(selections)} selections"
+                        )
+                        if selections:
+                            st.dataframe(pd.DataFrame(selections), use_container_width=True, hide_index=True)
+                elif isinstance(saved_payload, dict) and isinstance(saved_payload.get("selections"), list):
+                    st.success(
+                        f"Loaded {str(saved_payload.get('period', 'slip')).title()} Slip "
+                        f"#{saved_payload.get('slip_number', '—')} with "
+                        f"{len(saved_payload['selections'])} selections."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(saved_payload["selections"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.error("The uploaded JSON is not a recognized football-prediction slip format.")
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                st.error(f"Could not read the JSON file: {exc}")
+
     # Match explanation section
     render_markdown("---")
     render_markdown("""
