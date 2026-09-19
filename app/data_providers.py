@@ -799,7 +799,7 @@ class BSDProvider(FootballProvider):
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://sports.bzzoiro.com/api/v2",
+        base_url: str = "https://sports.bzzoiro.com/api/v2/",
         timeout: float = 20.0,
         cache_ttl_seconds: float = 60.0,
     ):
