@@ -811,6 +811,20 @@ class BSDProvider(FootballProvider):
         "106": "Ekstraklasa",
     }
 
+    # BSD has its own stable league namespace. These IDs were verified
+    # against BSD's public league catalogue; do not send API-Football IDs
+    # directly to BSD as league_id values.
+    BSD_LEAGUE_IDS: dict[str, int] = {
+        "39": 1,    # Premier League
+        "140": 3,   # La Liga
+        "78": 5,    # Bundesliga
+        "135": 4,   # Serie A
+        "61": 6,    # Ligue 1
+        "144": 14,  # Belgium Pro League
+        "88": 10,   # Eredivisie
+        "94": 2,    # Liga Portugal Betclic
+    }
+
     def __init__(
         self,
         api_key: str,
@@ -994,6 +1008,13 @@ class BSDProvider(FootballProvider):
         # The Streamlit selector uses API-Football league ids, while BSD has
         # its own ids. BSD explicitly documents /leagues/ as the source of
         # truth, so resolve by name instead of hardcoding guessed BSD ids.
+        # Prefer verified BSD-native IDs for the competitions exposed by
+        # the app's public selector. This is both faster and safer than fuzzy
+        # matching a league catalogue on every request.
+        mapped_id = self.BSD_LEAGUE_IDS.get(text)
+        if mapped_id is not None:
+            return mapped_id
+
         name = self.API_FOOTBALL_LEAGUE_NAMES.get(text)
         if not name:
             try:
@@ -1064,9 +1085,31 @@ class BSDProvider(FootballProvider):
 
         fallback_league = self.API_FOOTBALL_LEAGUE_NAMES.get(str(league).strip()) if league is not None else None
         if fallback_league:
+            verified: list[Fixture] = []
+            expected_name = " ".join(fallback_league.casefold().replace("-", " ").split())
+            aliases = {
+                "jupiler pro league": {"pro league", "jupiler pro league"},
+                "primeira liga": {"primeira liga", "liga portugal betclic", "liga portugal"},
+            }.get(expected_name, {expected_name})
+
             for fx in fixtures:
-                if not str(fx.league or "").strip() or str(fx.league).strip().casefold() == "unknown":
-                    fx.league = fallback_league
+                actual_id = str((fx.stats or {}).get("league_id") or "").strip()
+                actual_name = " ".join(str(fx.league or "").casefold().replace("-", " ").split())
+                id_ok = bool(actual_id) and actual_id == str(resolved_league)
+                name_ok = actual_name in aliases or any(
+                    alias in actual_name for alias in aliases
+                )
+
+                # An explicitly requested league must be verifiable. If BSD
+                # returns a row without matching league metadata, reject it
+                # instead of relabelling an unrelated fixture.
+                if id_ok or name_ok:
+                    if not actual_name or actual_name == "unknown":
+                        fx.league = fallback_league
+                    verified.append(fx)
+
+            fixtures = verified
+
         if season is not None:
             for fx in fixtures:
                 if not str(fx.season or "").strip() or str(fx.season).strip().casefold() == "unknown":
