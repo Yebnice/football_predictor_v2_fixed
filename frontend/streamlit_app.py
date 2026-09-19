@@ -517,7 +517,7 @@ else:
     ) if max_cards > 10 else max_cards
 
     for i, fx in enumerate(fixtures[:show_cards]):
-        best = engine.shortlist(fx, settings.min_selection_confidence, 1)
+        best = engine.shortlist(fx, settings.min_selection_confidence, 3)
         if best:
             p = best[0]
 
@@ -543,11 +543,14 @@ else:
                 </div>
 
                 <div style="margin-bottom: 1rem;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <span style="color: var(--text-secondary); font-size: 0.9rem;">{esc(p.market)} - {esc(p.selection)}</span>
-                        <span style="color: var(--text-primary); font-weight: 700;" class="animated-value">{p.probability:.1%}</span>
-                    </div>
-                    <div class="probability-bar" style="width: {p.probability * 100}%"></div>
+                    <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">Top model markets</div>
+                    {''.join(
+                        f'<div style="display:flex;justify-content:space-between;margin:0.35rem 0;">'
+                        f'<span style="color:var(--text-secondary);font-size:0.9rem;">{esc(item.market)} — {esc(item.selection)}</span>'
+                        f'<span style="color:var(--text-primary);font-weight:700;">{item.probability:.1%}</span>'
+                        f'</div>'
+                        for item in best
+                    )}
                 </div>
 
                 <div style="display: flex; justify-content: space-between; align-items: center;">
