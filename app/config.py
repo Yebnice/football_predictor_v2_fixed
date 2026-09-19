@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # `auto` uses the configured provider chain and gracefully skips providers
     # whose credentials are absent. No synthetic data provider is included.
     football_provider: str = "auto"
-    football_provider_chain: str = "thesportsdb,livescorefootball,api-football"
+    football_provider_chain: str = "openfootball,thesportsdb,livescorefootball,api-football"
     football_provider_mode: str = "fallback"
     football_api_base_url: str = ""
     football_api_key: str = ""
@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     thesportsdb_api_key: str = "123"
     thesportsdb_base_url: str = "https://www.thesportsdb.com/api/v1/json"
     thesportsdb_league_id: str = "4328"
+    openfootball_base_url: str = "https://raw.githubusercontent.com/openfootball/football.json/master"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     gemini_api_key: str = ""
