@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from app.data_providers import AllSportsAPIProvider, ISportsAPIProvider, FootballDataOrgProvider, TheSportsDBProvider, OpenFootballProvider, build_provider, build_provider_from_settings
+from app.data_providers import AllSportsAPIProvider, ISportsAPIProvider, FootballDataOrgProvider, TheSportsDBProvider, OpenFootballProvider, BSDProvider, build_provider, build_provider_from_settings
 from app.multi_provider import CompositeFootballProvider
 from app.schemas import Fixture, TeamForm
 
@@ -109,6 +109,81 @@ class TestAllSportsAPIProvider(unittest.TestCase):
         self.assertEqual(rows[0].status, "in_play")
         self.assertEqual(mock_get.call_args.kwargs["params"]["met"], "Livescore")
 
+
+class TestBSDProvider(unittest.TestCase):
+    @patch("app.data_providers.httpx.Client.get")
+    def test_normalizes_fixture(self, mock_get):
+        mock_get.return_value = Resp({
+            "id": 223510,
+            "kickoff": "2026-09-19T15:00:00+00:00",
+            "status": "upcoming",
+            "league": {"id": 10, "name": "Premier League"},
+            "season": {"id": 2026, "name": "Premier League 2026/27"},
+            "home_team": {"id": 1, "name": "Arsenal"},
+            "away_team": {"id": 2, "name": "Chelsea"},
+            "home_score": None,
+            "away_score": None,
+            "has_xg": True,
+        })
+        p = BSDProvider("key", cache_ttl_seconds=0)
+        fx = p._normalise(mock_get.return_value.json())
+        self.assertEqual(fx.fixture_id, "bsd-223510")
+        self.assertEqual(fx.home_team, "Arsenal")
+        self.assertEqual(fx.status, "scheduled")
+        self.assertEqual(fx.stats["league_id"], 10)
+        self.assertEqual(p.client.headers["Authorization"], "Token key")
+
+    def test_normalizes_consensus_odds(self):
+        out = BSDProvider._normalise_odds({
+            "event_id": 223510,
+            "odds": {"home_win": 1.80, "draw": 3.60, "away_win": 4.50, "btts_yes": 1.95}
+        })
+        self.assertEqual(out["home"], 1.80)
+        self.assertEqual(out["draw"], 3.60)
+        self.assertEqual(out["away"], 4.50)
+        self.assertEqual(out["btts_yes"], 1.95)
+
+    @patch("app.data_providers.httpx.Client.get")
+    def test_fixture_by_id_enriches_form_and_odds(self, mock_get):
+        detail = {
+            "id": 223510,
+            "kickoff": "2026-09-19T15:00:00+00:00",
+            "status": "upcoming",
+            "league": {"id": 10, "name": "Premier League"},
+            "season": {"id": 2026, "name": "Premier League 2026/27"},
+            "home_team": {"id": 1, "name": "Arsenal"},
+            "away_team": {"id": 2, "name": "Chelsea"},
+        }
+        history_home = {
+            "results": [
+                {"id": 1, "kickoff": "2026-09-10T15:00:00+00:00", "status": "finished",
+                 "home_team": {"id": 1, "name": "Arsenal"}, "away_team": {"id": 3, "name": "Everton"},
+                 "home_score": 2, "away_score": 0}
+            ]
+        }
+        history_away = {
+            "results": [
+                {"id": 2, "kickoff": "2026-09-10T15:00:00+00:00", "status": "finished",
+                 "home_team": {"id": 4, "name": "West Ham"}, "away_team": {"id": 2, "name": "Chelsea"},
+                 "home_score": 0, "away_score": 1}
+            ]
+        }
+        odds = {"event_id": 223510, "odds": {"home_win": 1.80, "draw": 3.60, "away_win": 4.50}}
+        def fake_get(url_or_path, *args, **kwargs):
+            path_text = str(url_or_path)
+            if path_text.endswith("/odds/"):
+                return Resp(odds)
+            if path_text.endswith("/events/"):
+                team_id = kwargs.get("params", {}).get("team_id")
+                return Resp(history_home if str(team_id) == "1" else history_away)
+            return Resp(detail)
+        mock_get.side_effect = fake_get
+        p = BSDProvider("key", cache_ttl_seconds=0)
+        fx = p.fixture_by_id("bsd-223510")
+        self.assertIsNotNone(fx)
+        self.assertEqual(fx.home_form.wins, 1)
+        self.assertEqual(fx.away_form.wins, 1)
+        self.assertEqual(fx.odds, {"home": 1.80, "draw": 3.60, "away": 4.50})
 
 class TestTheSportsDBProvider(unittest.TestCase):
     @patch("app.data_providers.httpx.Client.get")
@@ -235,6 +310,14 @@ class TestProviderRouter(unittest.TestCase):
         with self.assertRaises(ValueError):
             p.fixtures(datetime(2026, 9, 18, tzinfo=timezone.utc),
                        datetime(2026, 9, 18, 19, tzinfo=timezone.utc), live=True)
+
+    def test_auto_build_includes_bsd_when_key_configured(self):
+        p = build_provider(
+            "auto", "", "", provider_chain="bsd,openfootball",
+            bsd_api_key="bsd-key",
+        )
+        self.assertIsInstance(p, CompositeFootballProvider)
+        self.assertEqual(p.provider_names, ["bsd", "openfootball"])
 
     def test_auto_build_includes_openfootball_without_key(self):
         p = build_provider(
@@ -473,6 +556,8 @@ class TestProviderSettingsWiring(unittest.TestCase):
             thesportsdb_base_url = "https://www.thesportsdb.com/api/v1/json"
             thesportsdb_league_id = "4328"
             football_provider_chain = "football-data,thesportsdb"
+            bsd_api_key = "bsd-key"
+            bsd_base_url = "https://sports.bzzoiro.com/api/v2"
             football_provider_mode = "fallback"
         p = build_provider_from_settings(S())
         self.assertEqual(p.provider_names, ["football-data", "thesportsdb"])
