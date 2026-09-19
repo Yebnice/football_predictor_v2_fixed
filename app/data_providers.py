@@ -2304,7 +2304,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
     if normalized in {"bsd", "bzzoiro", "bzzoiro-sports-data"}:
         return BSDProvider(
             api_key=bsd_api_key,
-            base_url=bsd_base_url or "https://sports.bzzoiro.com/api/v2",
+            base_url=bsd_base_url or "https://sports.bzzoiro.com/api/v2/",
             cache_ttl_seconds=max(cache_ttl_seconds, 30.0),
         )
     if normalized in {"isportsapi", "isports"}:
