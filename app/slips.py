@@ -76,6 +76,13 @@ class SlipGenerator:
     def eligible(self, fixtures: Iterable[Fixture]) -> list[dict]:
         pool: list[dict] = []
         for fx in fixtures:
+            # Slip selections must carry a trustworthy competition label.
+            # Unknown/missing league metadata is not safe for a packaged slip,
+            # so leave those fixtures to the broad provider fetch without
+            # allowing them into the final slip.
+            league_name = str(getattr(fx, "league", "") or "").strip()
+            if league_name.casefold() in {"", "unknown", "n/a", "none"}:
+                continue
             candidates = [
                 m for m in self.engine.markets(fx)
                 if _tip_eligible(m)
