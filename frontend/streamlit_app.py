@@ -1219,7 +1219,7 @@ render_markdown(f"""
 <div style="background: var(--background-card-alt); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.75rem 1rem; margin: 1rem 0;">
     <strong>Background AI-approved fixtures:</strong>
     <span style="color: var(--text-secondary);">
-        Daily {_status_html if False else approved_window_counts["Daily"]} ·
+        Daily {approved_window_counts["Daily"]} ·
         Weekly {approved_window_counts["Weekly"]} ·
         Monthly {approved_window_counts["Monthly"]}
     </span>
