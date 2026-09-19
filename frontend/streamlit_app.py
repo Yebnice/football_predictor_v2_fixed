@@ -880,6 +880,159 @@ render_markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# Complete application function map. This describes only features that are
+# wired into this deployed Streamlit interface; it is intentionally kept
+# separate from the prediction output so users can see where every function
+# lives and which account level can access it.
+render_markdown("""
+<div style="margin: 1.25rem 0 0.5rem 0;">
+    <h2 style="margin: 0;">🧭 All App Functions</h2>
+    <p style="color: var(--text-secondary); margin: 0.3rem 0 0 0;">
+        The complete user-facing feature map for the current deployment.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+with st.expander("Open the full function map", expanded=False):
+    function_rows = [
+        {
+            "Area": "Prediction Windows",
+            "Function": "Daily / Weekly / Monthly / Live",
+            "What it does": "Loads fixtures for the selected time horizon and runs the prediction interface.",
+            "Access": "All users",
+        },
+        {
+            "Area": "World Football Search",
+            "Function": "All-league fixture discovery",
+            "What it does": "Searches the configured football-provider universe and backfills core major leagues when available.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Priority Leagues",
+            "Function": "Optional league priorities",
+            "What it does": "Lets the user prioritize selected competitions without excluding other available leagues.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Match Predictions",
+            "Function": "1X2 / Double Chance / DNB / BTTS / Goals",
+            "What it does": "Calculates probability-based outcomes from the statistical football model.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Match Data",
+            "Function": "Match Data Overview",
+            "What it does": "Shows kickoff, league, form, scoring rates, top model market and probability for the current fixture pool.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Goal Markets",
+            "Function": "Over / Under 1.5, 2.5, 3.5",
+            "What it does": "Shows model probabilities for standard total-goal lines.",
+            "Access": "All users",
+        },
+        {
+            "Area": "AI Prediction Agent",
+            "Function": "AI review of prediction candidates",
+            "What it does": "Reviews selected high-value fixtures using model candidates plus available deeper provider evidence, then approves/rejects validated outcomes.",
+            "Access": "When Gemini or Groq is configured",
+        },
+        {
+            "Area": "Top Predictions",
+            "Function": "Daily 5 / Weekly 10 / Monthly 15",
+            "What it does": "Shows the highest-confidence publishable predictions from the relevant period pool after AI review when available.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Prediction Slips",
+            "Function": "5-slip packages",
+            "What it does": "Generates exactly 5 diversified slips using the configured Daily, Weekly or Monthly match-count rules.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Slip Output",
+            "Function": "Match | Outcome tables",
+            "What it does": "Presents each slip in the simple readable format requested for sharing and use.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Downloads",
+            "Function": "PDF + JSON",
+            "What it does": "Downloads individual slips or the full 5-slip package as readable A4 PDFs and simplified JSON.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Saved Slips",
+            "Function": "Read saved slip JSON",
+            "What it does": "Re-opens an individual slip or five-slip JSON package inside the app.",
+            "Access": "All users",
+        },
+        {
+            "Area": "AI Match Analysis",
+            "Function": "Gemini / Groq / Both",
+            "What it does": "Loads deeper match data and produces an AI explanation for a selected fixture.",
+            "Access": "When the selected AI provider is configured",
+        },
+        {
+            "Area": "Corners & Cards",
+            "Function": "Corners and cards analysis",
+            "What it does": "Displays the available corners/cards model outputs and identifies estimated versus real provider-backed corner markets.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Analytics",
+            "Function": "Dashboard / probability analysis",
+            "What it does": "Displays probability distributions, market-type analysis and probability-versus-fair-odds views.",
+            "Access": "All users",
+        },
+        {
+            "Area": "System",
+            "Function": "System Architecture",
+            "What it does": "Shows the application's high-level provider, model and AI architecture.",
+            "Access": "All users",
+        },
+        {
+            "Area": "Accounts",
+            "Function": "Sign-up / Login / Roles",
+            "What it does": "Supports member authentication and role-based access through the configured database/auth layer.",
+            "Access": "Account users",
+        },
+        {
+            "Area": "VVIP",
+            "Function": "VVIP Tips Board",
+            "What it does": "Displays premium tips available to authorized VVIP members.",
+            "Access": "Authorized VVIP members",
+        },
+        {
+            "Area": "Administration",
+            "Function": "Admin Board",
+            "What it does": "Allows authorized administrators to manage tips, statuses and member roles.",
+            "Access": "Administrators",
+        },
+        {
+            "Area": "Security & Operations",
+            "Function": "Provider status / secrets / rate limits",
+            "What it does": "Shows runtime provider configuration status while keeping secrets server-side and supports configured request-rate controls.",
+            "Access": "Status visible; controls are backend/deployment settings",
+        },
+    ]
+    st.dataframe(
+        pd.DataFrame(function_rows),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Area": st.column_config.TextColumn("Area", width="small"),
+            "Function": st.column_config.TextColumn("Function", width="medium"),
+            "What it does": st.column_config.TextColumn("What it does", width="large"),
+            "Access": st.column_config.TextColumn("Access", width="medium"),
+        },
+    )
+    st.caption(
+        "Deployment note: this function map describes the Streamlit frontend entry point "
+        "at frontend/streamlit_app.py. Backend APIs are deployed separately according "
+        "to the repository deployment configuration."
+    )
+
 # Sidebar with modern styling
 with st.sidebar:
     render_markdown(f"""
