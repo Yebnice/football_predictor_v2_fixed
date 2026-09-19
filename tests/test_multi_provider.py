@@ -630,7 +630,7 @@ class TestProviderSettingsWiring(unittest.TestCase):
         p = build_provider_from_settings(S())
         self.assertEqual(
             p.provider_names,
-            ["bsd", "openfootball", "thesportsdb", "livescorefootball", "football-data"],
+            ["openfootball", "football-data", "thesportsdb", "bsd", "livescorefootball"],
         )
 
 if __name__ == "__main__":
