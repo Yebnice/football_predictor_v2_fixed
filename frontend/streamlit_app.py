@@ -579,53 +579,118 @@ else:
     ) if max_cards > 10 else max_cards
 
     for i, fx in enumerate(fixtures[:show_cards]):
+        # Keep the publishable "tip" shortlist separate from the full outcome
+        # probabilities. A high-probability outcome can be valid model output
+        # even when it is intentionally excluded from the tip band (>75%).
         best = engine.shortlist(fx, settings.min_selection_confidence, 3)
-        if best:
-            p = best[0]
+        all_markets = engine.markets(fx)
+        outcome_markets = {
+            m.selection: m for m in all_markets if m.market == "1X2"
+        }
+        double_chance = {
+            m.selection: m for m in all_markets if m.market == "Double Chance"
+        }
 
-            # Determine confidence level
-            if p.probability >= 0.75:
-                confidence_class = "status-high"
-                confidence_label = "HIGH"
-            elif p.probability >= 0.65:
-                confidence_class = "status-medium"
-                confidence_label = "MEDIUM"
-            else:
-                confidence_class = "status-low"
-                confidence_label = "LOW"
+        corner_markets = corners_cards_engine.markets(fx)
+        total_corner_markets = [
+            m for m in corner_markets
+            if m.market == "Total Corners"
+        ]
 
-            render_markdown(f"""
-            <div class="prediction-card">
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
-                    <div>
-                        <h3 style="margin: 0; font-size: 1.25rem;">{esc(fx.home_team)} vs {esc(fx.away_team)}</h3>
-                        <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0; font-size: 0.9rem;">{esc(fx.league)}</p>
-                    </div>
-                    <span class="status-badge {confidence_class}">{confidence_label}</span>
+        primary = best[0] if best else (outcome_markets.get("Home Win") or outcome_markets.get("Draw") or outcome_markets.get("Away Win"))
+        primary_probability = primary.probability if primary else 0.0
+
+        # Determine confidence level without hiding the fixture when no
+        # publishable shortlist item exists.
+        if primary_probability >= 0.75:
+            confidence_class = "status-high"
+            confidence_label = "HIGH"
+        elif primary_probability >= 0.65:
+            confidence_class = "status-medium"
+            confidence_label = "MEDIUM"
+        else:
+            confidence_class = "status-low"
+            confidence_label = "LOW"
+
+        outcome_html = "".join(
+            f'<div style="flex:1;text-align:center;padding:0.65rem 0.4rem;background:var(--background-card-alt);border-radius:8px;">'
+            f'<div style="color:var(--text-secondary);font-size:0.78rem;">{esc(label)}</div>'
+            f'<div style="color:var(--text-primary);font-size:1.05rem;font-weight:700;">'
+            f'{outcome_markets[label].probability:.1%}' if label in outcome_markets else
+            f'<div style="flex:1;text-align:center;padding:0.65rem 0.4rem;background:var(--background-card-alt);border-radius:8px;">'
+            f'<div style="color:var(--text-secondary);font-size:0.78rem;">{esc(label)}</div>'
+            f'<div style="color:var(--text-primary);font-size:1.05rem;font-weight:700;">—'
+            f'</div></div>'
+            for label in ["Home Win", "Draw", "Away Win"]
+        )
+
+        double_chance_html = "".join(
+            f'<div style="flex:1;text-align:center;padding:0.55rem 0.4rem;border:1px solid var(--border-color);border-radius:8px;">'
+            f'<div style="color:var(--text-secondary);font-size:0.75rem;">{esc(label)}</div>'
+            f'<div style="color:var(--text-primary);font-weight:700;">{double_chance[label].probability:.1%}</div>'
+            f'</div>'
+            for label in ["1X", "X2", "12"] if label in double_chance
+        )
+
+        corner_html = "".join(
+            f'<div style="display:flex;justify-content:space-between;margin:0.3rem 0;">'
+            f'<span style="color:var(--text-secondary);font-size:0.86rem;">{esc(item.selection)}</span>'
+            f'<span style="color:var(--text-primary);font-weight:700;">{item.probability:.1%}</span>'
+            f'</div>'
+            for item in total_corner_markets
+        )
+
+        top_html = (
+            "".join(
+                f'<div style="display:flex;justify-content:space-between;margin:0.3rem 0;">'
+                f'<span style="color:var(--text-secondary);font-size:0.86rem;">{esc(item.market)} — {esc(item.selection)}</span>'
+                f'<span style="color:var(--text-primary);font-weight:700;">{item.probability:.1%}</span>'
+                f'</div>'
+                for item in best
+            )
+            if best else
+            '<div style="color:var(--text-secondary);font-size:0.85rem;">No selection currently meets the configured tip threshold. Full model probabilities remain available above.</div>'
+        )
+
+        fair_odds_text = f"{primary.fair_odds:.2f}" if primary and primary.fair_odds else "—"
+
+        render_markdown(f"""
+        <div class="prediction-card">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                <div>
+                    <h3 style="margin: 0; font-size: 1.25rem;">{esc(fx.home_team)} vs {esc(fx.away_team)}</h3>
+                    <p style="color: var(--text-secondary); margin: 0.25rem 0 0 0; font-size: 0.9rem;">{esc(fx.league)}</p>
                 </div>
+                <span class="status-badge {confidence_class}">{confidence_label}</span>
+            </div>
 
-                <div style="margin-bottom: 1rem;">
-                    <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">Top model markets</div>
-                    {''.join(
-                        f'<div style="display:flex;justify-content:space-between;margin:0.35rem 0;">'
-                        f'<span style="color:var(--text-secondary);font-size:0.9rem;">{esc(item.market)} — {esc(item.selection)}</span>'
-                        f'<span style="color:var(--text-primary);font-weight:700;">{item.probability:.1%}</span>'
-                        f'</div>'
-                        for item in best
-                    )}
+            <div style="margin-bottom: 1rem;">
+                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">Match outcome probabilities</div>
+                <div style="display:flex;gap:0.5rem;">{outcome_html}</div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">{double_chance_html}</div>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">Corner probabilities — model estimates</div>
+                {corner_html}
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;">Top publishable markets</div>
+                {top_html}
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="color: var(--text-secondary); font-size: 0.85rem;">Primary fair odds:</span>
+                    <span style="color: var(--text-primary); font-weight: 600; margin-left: 0.5rem;">{fair_odds_text}</span>
                 </div>
-
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <span style="color: var(--text-secondary); font-size: 0.85rem;">Fair Odds:</span>
-                        <span style="color: var(--text-primary); font-weight: 600; margin-left: 0.5rem;">{p.fair_odds:.2f}</span>
-                    </div>
-                    <div style="font-size: 0.85rem; color: var(--text-secondary);">
-                        {fx.date.strftime('%Y-%m-%d %H:%M')} UTC
-                    </div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                    {fx.date.strftime('%Y-%m-%d %H:%M')} UTC
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+        </div>
+        """, unsafe_allow_html=True)
 
     render_markdown('</div>', unsafe_allow_html=True)
 
