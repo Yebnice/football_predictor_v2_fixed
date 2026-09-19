@@ -1210,9 +1210,9 @@ else:
                     if top_predictions:
                         top_rows = [
                             {
-                                "Match": f"{item["home_team"]} vs {item["away_team"]}",
+                                "Match": f"{item['home_team']} vs {item['away_team']}",
                                 "Outcome": (
-                                    f"BTTS - {item["selection"]}"
+                                    f"BTTS - {item['selection']}"
                                     if item["market"] == "BTTS" and item["selection"] in {"Yes", "No"}
                                     else item["selection"]
                                 ),
@@ -1283,7 +1283,7 @@ else:
                     slip_rows = [
                         {
                             "Match": f"{item.get('home_team', '')} vs {item.get('away_team', '')}",
-                            "Outcome": item.get("selection", ""),
+                            "Outcome": _display_outcome(item),
                         }
                         for item in s.selections
                     ]
