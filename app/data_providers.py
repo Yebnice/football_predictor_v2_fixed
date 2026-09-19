@@ -1053,6 +1053,17 @@ class BSDProvider(FootballProvider):
         if isinstance(rows, dict):
             rows = list(rows.values())
         fixtures = [self._normalise(row) for row in rows if isinstance(row, dict)]
+
+        fallback_league = self.API_FOOTBALL_LEAGUE_NAMES.get(str(league).strip()) if league is not None else None
+        if fallback_league:
+            for fx in fixtures:
+                if not str(fx.league or "").strip() or str(fx.league).strip().casefold() == "unknown":
+                    fx.league = fallback_league
+        if season is not None:
+            for fx in fixtures:
+                if not str(fx.season or "").strip() or str(fx.season).strip().casefold() == "unknown":
+                    fx.season = str(season)
+
         return [fx for fx in fixtures if start <= fx.date <= end]
 
     def fixture_by_id(self, fixture_id: str) -> Fixture | None:
@@ -2195,14 +2206,19 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
     # setting from bypassing the configured OpenFootball/TheSportsDB fallbacks.
     provider_name = settings.football_provider
     provider_chain = settings.football_provider_chain
-    if (
-        str(provider_name or "").strip().lower() in {"api-football", "api_football", "api-sports", "apisports"}
-        and str(getattr(settings, "football_provider_mode", "fallback")).strip().lower() == "fallback"
-    ):
+    provider_mode = str(getattr(settings, "football_provider_mode", "fallback") or "fallback").strip().lower()
+
+    # Streamlit Community Cloud exposes root-level secrets as environment
+    # variables, so an older FOOTBALL_PROVIDER_CHAIN secret can override a new
+    # Settings default. In auto/fallback mode, always preserve the configured
+    # free-first providers and then retain any user-specified providers.
+    auto_mode = str(provider_name or "").strip().lower() in {"auto", "multi", "composite", "fallback"}
+    if auto_mode or provider_mode == "fallback":
         existing = [x.strip() for x in str(provider_chain or "").split(",") if x.strip()]
         fallback_first = ["bsd", "bigballsdata", "openfootball", "thesportsdb", "livescorefootball"]
         provider_chain = ",".join(dict.fromkeys(fallback_first + existing))
-        provider_name = "auto"
+        if str(provider_name or "").strip().lower() in {"api-football", "api_football", "api-sports", "apisports"}:
+            provider_name = "auto"
 
     return build_provider(
         provider_name,
