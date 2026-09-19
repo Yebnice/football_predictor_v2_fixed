@@ -2408,7 +2408,7 @@ def build_provider_from_settings(settings: Any) -> FootballProvider:
     legacy_api_football = str(provider_name or "").strip().lower() in {"api-football", "api_football", "api-sports", "apisports"}
     if auto_mode or (legacy_api_football and provider_mode == "fallback"):
         existing = [x.strip() for x in str(provider_chain or "").split(",") if x.strip()]
-        fallback_first = ["bsd", "bigballsdata", "openfootball", "thesportsdb", "livescorefootball"]
+        fallback_first = ["openfootball", "football-data", "thesportsdb", "bigballsdata", "bsd", "livescorefootball"]
         provider_chain = ",".join(dict.fromkeys(fallback_first + existing))
         if legacy_api_football:
             provider_name = "auto"
@@ -2483,7 +2483,7 @@ def build_provider(name: str, base_url: str, api_key: str, cache_ttl_seconds: fl
     normalized = (name or "auto").lower().strip()
     chain_spec = provider_chain.strip() if provider_chain else (name if "," in name else "")
     if normalized in {"auto", "multi", "composite", "fallback"}:
-        chain_spec = provider_chain.strip() or "bsd,bigballsdata,openfootball,thesportsdb,livescorefootball,api-football"
+        chain_spec = provider_chain.strip() or "openfootball,football-data,thesportsdb,bigballsdata,bsd,livescorefootball,api-football"
     if chain_spec:
         from .multi_provider import CompositeFootballProvider
         providers: list[tuple[str, FootballProvider]] = []
