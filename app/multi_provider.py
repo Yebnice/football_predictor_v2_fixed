@@ -157,6 +157,7 @@ class CompositeFootballProvider(FootballProvider):
                 "isportsapi", "isports",
                 "thesportsdb", "the-sports-db", "thesportsdb-v1",
                 "openfootball", "open-football", "football-json",
+                "bsd", "bzzoiro", "bzzoiro-sports-data",
             }:
                 continue
             try:
@@ -313,25 +314,37 @@ class CompositeFootballProvider(FootballProvider):
         return None
 
     def _enrich_odds(self, fx: Fixture, fixture_id: str) -> None:
-        """Best-effort normalize 1X2 odds from an API-Football-like provider.
+        """Best-effort odds enrichment from configured odds-capable providers.
 
-        The primary fixture provider remains authoritative for identity/form;
-        this only fills the optional `Fixture.odds` field. It never raises.
+        BSD exposes free consensus 1X2 prices directly from the event odds
+        endpoint; API-Football remains supported as another optional source.
         """
-        api_id = (fx.stats or {}).get("api_football_id")
         for name, provider in self.providers:
-            if name not in {"api-football", "api-sports", "apisports"}:
+            if name not in {"bsd", "bzzoiro", "bzzoiro-sports-data", "api-football", "api-sports", "apisports"}:
                 continue
-            candidate_id = str(api_id or fixture_id)
             try:
-                raw = provider.odds(candidate_id)
-                normalized = _extract_1x2_odds(raw, fx.home_team, fx.away_team)
+                candidate_id = fixture_id
+                if name in {"api-football", "api-sports", "apisports"}:
+                    candidate_id = str((fx.stats or {}).get("api_football_id") or fixture_id)
+                    raw = provider.odds(candidate_id)
+                    normalized = _extract_1x2_odds(raw, fx.home_team, fx.away_team)
+                else:
+                    raw = provider.odds(candidate_id)
+                    odds = raw.get("odds") if isinstance(raw, dict) else None
+                    normalized = {}
+                    if isinstance(odds, dict):
+                        for source, target in {"home_win": "home", "draw": "draw", "away_win": "away"}.items():
+                            try:
+                                if odds.get(source) is not None:
+                                    normalized[target] = float(odds[source])
+                            except (TypeError, ValueError):
+                                pass
                 if normalized:
                     fx.odds = normalized
                     fx.stats = {**(fx.stats or {}), "odds_provider": name, "odds_fixture_id": candidate_id}
                     return
             except Exception as exc:
-                logger.debug("%s odds enrichment failed for %s: %s", name, candidate_id, exc)
+                logger.debug("%s odds enrichment failed for %s: %s", name, fixture_id, exc)
 
     def fixture_details(self, fixture_id: str) -> dict[str, Any]:
         for name, provider in self._ordered_for_fixture(fixture_id):
