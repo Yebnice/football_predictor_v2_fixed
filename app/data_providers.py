@@ -1919,6 +1919,43 @@ class ApiFootballProvider(FootballProvider):
             f"API-Football request failed after trying all {len(self.api_keys)} configured key(s): {last_error}"
         )
 
+    def global_fixtures(self, start: datetime, end: datetime) -> list[Fixture]:
+        """Fetch upcoming fixtures across the provider's global competition universe.
+
+        API-Football documents /fixtures?date=YYYY-MM-DD as a global daily feed and
+        also supports from/to date-range filtering. This path intentionally does
+        not require API_FOOTBALL_LEAGUES, so the world-football slip search is not
+        limited to the four default competitions.
+        """
+        params = {
+            "from": start.date().isoformat(),
+            "to": end.date().isoformat(),
+        }
+        payload = self._get("/fixtures", params, cacheable=True)
+        rows = payload.get("response", [])
+        if not isinstance(rows, list):
+            rows = []
+
+        out: list[Fixture] = []
+        seen: set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            fx = _normalize_api_football_fixture(row)
+            if not (start <= fx.date <= end):
+                continue
+            if str(fx.home_team).strip().casefold() in {"", "unknown", "home"}:
+                continue
+            if str(fx.away_team).strip().casefold() in {"", "unknown", "away"}:
+                continue
+            if fx.fixture_id in seen:
+                continue
+            seen.add(fx.fixture_id)
+            out.append(fx)
+
+        out.sort(key=lambda item: item.date)
+        return out
+
     def fixtures(self, start: datetime, end: datetime, live: bool = False,
                  league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
         if live:
