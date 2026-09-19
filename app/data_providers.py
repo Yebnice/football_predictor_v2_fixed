@@ -483,6 +483,13 @@ class ISportsAPIProvider(FootballProvider):
                 "league_id": row.get("leagueId"),
                 "neutral": row.get("neutral"),
                 "explain": row.get("explain"),
+                "home_red": row.get("homeRed"),
+                "away_red": row.get("awayRed"),
+                "home_yellow": row.get("homeYellow"),
+                "away_yellow": row.get("awayYellow"),
+                "home_corner": row.get("homeCorner"),
+                "away_corner": row.get("awayCorner"),
+                "update_time": row.get("updateTime"),
             },
         )
 
