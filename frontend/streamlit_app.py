@@ -356,13 +356,13 @@ def _fetch_all_leagues_with_majors(start_dt, end_dt, season, minimum, priority_i
 
     major_aliases = {
         "39": ("premier league",),
-        "140": ("laliga", "la liga"),
+        "140": ("laliga", "la liga", "primera división", "primera division"),
         "78": ("bundesliga",),
         "135": ("serie a",),
         "61": ("ligue 1",),
-        "144": ("jupiler", "jupiler pro league"),
+        "144": ("jupiler", "jupiler pro league", "pro league"),
         "88": ("eredivisie",),
-        "94": ("primeira liga",),
+        "94": ("primeira liga", "liga portugal", "portuguese primeira"),
     }
 
     # Fast-path the European core through OpenFootball. Its provider supports
