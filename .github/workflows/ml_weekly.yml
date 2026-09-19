@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "15 3 * * 1"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/services/ml_pipeline.py"
+      - "app/services/ai_agent.py"
+      - "app/multi_provider.py"
+      - "app/data_providers.py"
+      - ".github/workflows/ml_weekly.yml"
+      - "scripts/publish_ml_manifest.py"
 
 permissions:
   contents: write
@@ -44,9 +53,9 @@ jobs:
           DB_PATH: ${{ secrets.DB_PATH }}
           # Weekly retraining uses the same bounded OpenFootball history source
           # so a slow/rate-limited provider cannot hold the ML job open.
-          FOOTBALL_PROVIDER: "openfootball"
-          FOOTBALL_PROVIDER_CHAIN: "openfootball"
-          FOOTBALL_PROVIDER_MODE: "fallback"
+          FOOTBALL_PROVIDER: "bsd,bigballsdata,thesportsdb,openfootball,api-football,football-data"
+          FOOTBALL_PROVIDER_CHAIN: "bsd,bigballsdata,thesportsdb,openfootball,api-football,football-data"
+          FOOTBALL_PROVIDER_MODE: "merge"
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_KEYS: ${{ secrets.API_FOOTBALL_KEYS }}
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
