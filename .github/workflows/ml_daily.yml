@@ -53,9 +53,9 @@ jobs:
           DB_PATH: ${{ secrets.DB_PATH }}
           # ML training uses the fast, no-key OpenFootball dataset. The
           # foreground dashboard keeps its broader provider chain separately.
-          FOOTBALL_PROVIDER: "openfootball"
-          FOOTBALL_PROVIDER_CHAIN: "openfootball"
-          FOOTBALL_PROVIDER_MODE: "fallback"
+          FOOTBALL_PROVIDER: "bsd,bigballsdata,thesportsdb,openfootball,api-football,football-data"
+          FOOTBALL_PROVIDER_CHAIN: "bsd,bigballsdata,thesportsdb,openfootball,api-football,football-data"
+          FOOTBALL_PROVIDER_MODE: "merge"
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           API_FOOTBALL_KEYS: ${{ secrets.API_FOOTBALL_KEYS }}
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
