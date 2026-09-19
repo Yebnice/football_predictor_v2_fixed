@@ -64,6 +64,113 @@ def migrate_001_initial_schema(conn: Any):
     """)
 
 
+@migration("003_add_ml_pipeline_tables")
+def migrate_003_add_ml_pipeline_tables(conn: Any):
+    """Persistent data/model/prediction tables for the background ML lifecycle."""
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS ml_matches (
+        fixture_id TEXT PRIMARY KEY,
+        kickoff_utc TEXT NOT NULL,
+        league TEXT NOT NULL,
+        season TEXT,
+        home_team TEXT NOT NULL,
+        away_team TEXT NOT NULL,
+        status TEXT NOT NULL,
+        home_score INTEGER,
+        away_score INTEGER,
+        source_provider TEXT,
+        collected_at REAL NOT NULL,
+        raw_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ml_matches_kickoff ON ml_matches(kickoff_utc);
+    CREATE INDEX IF NOT EXISTS idx_ml_matches_teams ON ml_matches(home_team, away_team);
+    CREATE INDEX IF NOT EXISTS idx_ml_matches_status ON ml_matches(status);
+
+    CREATE TABLE IF NOT EXISTS ml_feature_snapshots (
+        fixture_id TEXT NOT NULL,
+        as_of_utc TEXT NOT NULL,
+        features_json TEXT NOT NULL,
+        model_version TEXT,
+        feature_hash TEXT,
+        PRIMARY KEY (fixture_id, as_of_utc)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ml_features_model ON ml_feature_snapshots(model_version);
+
+    CREATE TABLE IF NOT EXISTS ml_models (
+        model_version TEXT PRIMARY KEY,
+        algorithm TEXT NOT NULL,
+        trained_at REAL NOT NULL,
+        training_rows INTEGER NOT NULL,
+        metrics_json TEXT NOT NULL,
+        artifact_json TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ml_models_active ON ml_models(active, trained_at);
+
+    CREATE TABLE IF NOT EXISTS ml_predictions (
+        id TEXT PRIMARY KEY,
+        fixture_id TEXT NOT NULL,
+        model_version TEXT NOT NULL,
+        predicted_at REAL NOT NULL,
+        kickoff_utc TEXT NOT NULL,
+        league TEXT NOT NULL,
+        home_team TEXT NOT NULL,
+        away_team TEXT NOT NULL,
+        market TEXT NOT NULL,
+        selection TEXT NOT NULL,
+        probability REAL NOT NULL,
+        fair_odds REAL,
+        model_probability REAL NOT NULL,
+        home_lambda REAL,
+        away_lambda REAL,
+        candidate_index INTEGER NOT NULL DEFAULT -1,
+        ai_approved INTEGER NOT NULL DEFAULT 0,
+        ai_review_score REAL,
+        ai_rationale TEXT,
+        risk_flags_json TEXT,
+        reviewers_json TEXT,
+        status TEXT NOT NULL DEFAULT 'pending_ai',
+        actual_outcome TEXT,
+        won INTEGER,
+        settled_at REAL,
+        UNIQUE (fixture_id, model_version, market, selection)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ml_predictions_kickoff ON ml_predictions(kickoff_utc);
+    CREATE INDEX IF NOT EXISTS idx_ml_predictions_status ON ml_predictions(status, ai_approved);
+    CREATE INDEX IF NOT EXISTS idx_ml_predictions_model ON ml_predictions(model_version);
+    CREATE INDEX IF NOT EXISTS idx_ml_predictions_fixture ON ml_predictions(fixture_id);
+
+    CREATE TABLE IF NOT EXISTS ml_runs (
+        id TEXT PRIMARY KEY,
+        run_type TEXT NOT NULL,
+        started_at REAL NOT NULL,
+        completed_at REAL,
+        status TEXT NOT NULL,
+        summary_json TEXT,
+        errors_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ml_runs_started ON ml_runs(started_at);
+
+    CREATE TABLE IF NOT EXISTS ml_drift (
+        id TEXT PRIMARY KEY,
+        checked_at REAL NOT NULL,
+        model_version TEXT,
+        feature_drift_score REAL,
+        performance_log_loss REAL,
+        validation_log_loss REAL,
+        alert INTEGER NOT NULL DEFAULT 0,
+        details_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ml_drift_checked ON ml_drift(checked_at);
+    """);
+
+
 @migration("002_add_tip_indexes")
 def migrate_002_add_tip_indexes(conn: Any):
     """Add performance indexes for common queries."""
