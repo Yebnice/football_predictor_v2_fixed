@@ -67,6 +67,14 @@ class SlipTests(unittest.TestCase):
         }
         self.assertEqual(len(signatures), 5)
 
+    def test_generated_slips_never_contain_unknown_leagues(self):
+        gen = SlipGenerator(FootballProbabilityEngine(), 0.5, "no-unknown")
+        for slip in gen.daily(self.fixtures(80)):
+            self.assertTrue(all(
+                str(item.get("league", "")).strip().casefold() not in {"", "unknown", "n/a", "none"}
+                for item in slip.selections
+            ))
+
     def test_one_selection_per_fixture_per_slip(self):
         gen = SlipGenerator(FootballProbabilityEngine(), 0.5, "x")
         for slip in gen.weekly(self.fixtures(120)):
