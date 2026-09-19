@@ -319,10 +319,11 @@ class AIPredictionAgent:
             except Exception:
                 pass
 
-        # Pre-match lineups are often unavailable; only query them when the
-        # provider reports a state where lineup data is meaningful.
+        # Lineups can become available before kickoff, so a pre-match fixture
+        # should be eligible for this lookup. Providers may still return no data;
+        # the exception is swallowed rather than fabricating a lineup.
         status = str(fx.status or "").casefold()
-        if status not in {"scheduled", "not started", "ns", ""}:
+        if status in {"scheduled", "not started", "ns", "", "in_play", "live"}:
             try:
                 lineups = self.provider.lineups(fx.fixture_id)
                 if lineups:
