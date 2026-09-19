@@ -1190,7 +1190,42 @@ ml_metrics = {
 }
 approved_manifest_count = int(ml_manifest.get("approved_predictions_count") or 0)
 drift_label = "ALERT" if latest_ml_drift and bool(latest_ml_drift.get("alert")) else "OK"
+
+# Show how many background-approved fixtures are actually usable in each
+# package window, rather than confusing the raw provider fixture pool with
+# the AI-approved publication pool.
+try:
+    _status_now = datetime.now(timezone.utc)
+    _manifest_rows = list(ml_manifest.get("predictions") or [])
+    def _status_kickoff(row):
+        try:
+            return datetime.fromisoformat(
+                str(row.get("kickoff_utc") or "").replace("Z", "+00:00")
+            ).astimezone(timezone.utc)
+        except Exception:
+            return None
+    approved_window_counts = {}
+    for _label, _days in {"Daily": 1, "Weekly": 7, "Monthly": 31}.items():
+        approved_window_counts[_label] = sum(
+            1
+            for _row in _manifest_rows
+            if _status_kickoff(_row) is not None
+            and _status_now <= _status_kickoff(_row) <= _status_now + timedelta(days=_days)
+        )
+except Exception:
+    approved_window_counts = {"Daily": 0, "Weekly": 0, "Monthly": 0}
 # Fixture pool overview
+render_markdown(f"""
+<div style="background: var(--background-card-alt); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.75rem 1rem; margin: 1rem 0;">
+    <strong>Background AI-approved fixtures:</strong>
+    <span style="color: var(--text-secondary);">
+        Daily {_status_html if False else approved_window_counts["Daily"]} ·
+        Weekly {approved_window_counts["Weekly"]} ·
+        Monthly {approved_window_counts["Monthly"]}
+    </span>
+</div>
+""", unsafe_allow_html=True)
+
 render_markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin: 2rem 0 1rem 0;">
     <div>
@@ -1281,15 +1316,8 @@ else:
                         and now_utc <= _row_kickoff(row) <= now_utc + timedelta(days=forecast_days)
                     ]
 
-                    # On low-fixture days, Daily uses the next available approved
-                    # fixtures from the same 31-day background forecast.
-                    if pkg == "Daily" and len(approved_rows) < 10:
-                        approved_rows = [
-                            row for row in (ml_manifest.get("predictions") or [])
-                            if _row_kickoff(row) is not None
-                            and now_utc <= _row_kickoff(row) <= now_utc + timedelta(days=31)
-                        ]
-
+                    # Daily is strictly the next 24 hours. Do not extend
+                    # the Daily package into later dates just to reach the minimum.
                     def _fixture_from_approved(row):
                         kickoff = _row_kickoff(row)
                         if kickoff is None:
@@ -1343,10 +1371,15 @@ else:
                     eligible_count = len(ai_decisions)
                     minimum_required = {"Daily": 10, "Weekly": 20, "Monthly": 20}.get(pkg, 0)
                     if eligible_count < minimum_required:
+                        window_label = {
+                            "Daily": "next 24 hours",
+                            "Weekly": "next 7 days",
+                            "Monthly": "next 31 days",
+                        }.get(pkg, f"next {forecast_days} days")
                         raise ValueError(
-                            f"Background AI-approved pool has only {eligible_count} eligible fixtures; "
+                            f"Only {eligible_count} background AI-approved fixtures are available in the {window_label}; "
                             f"{pkg.lower()} packages require at least {minimum_required}. "
-                            "The package is withheld until the background ML pipeline has enough approved fixtures."
+                            "The package is withheld until the background ML pipeline publishes enough approved fixtures for this exact window."
                         )
 
                     if pkg == "Daily":
