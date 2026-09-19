@@ -455,11 +455,25 @@ def _collect_from_provider(
                 except Exception as exc:
                     logger.warning("API-Football global ML collection failed: %s", exc)
     if not rows:
-        try:
-            rows = list(provider.fixtures(start, end, season=start.year) or [])
-        except Exception as exc:
-            logger.warning("Composite ML collection fallback failed: %s", exc)
-            rows = []
+        # The 180-day training window can cross a football season boundary.
+        # Query both the season containing the start date and the current
+        # season so March-May results from the previous season are available
+        # alongside the current-season fixtures.
+        collected: list[Fixture] = []
+        seen_season_errors: list[str] = []
+        for season_year in dict.fromkeys((start.year, start.year - 1)):
+            try:
+                collected.extend(
+                    list(provider.fixtures(start, end, season=season_year) or [])
+                )
+            except Exception as exc:
+                seen_season_errors.append(f"{season_year}: {exc}")
+        rows = collected
+        if not rows and seen_season_errors:
+            logger.warning(
+                "Composite ML collection fallback failed across seasons: %s",
+                " | ".join(seen_season_errors),
+            )
 
     out: list[Fixture] = []
     seen: set[tuple[str, str, str, str]] = set()
