@@ -21,6 +21,7 @@ from app.config import settings
 from app.leagues import MAJOR_LEAGUES
 from app.data_providers import build_provider_from_settings
 from app.engine import FootballProbabilityEngine
+from app.schemas import TeamForm
 from app.corners_cards import CornersCardsEngine
 from app.slips import SlipGenerator
 from app.services.ai_groq import GroqExplainer
@@ -338,6 +339,61 @@ def _fetch_package_fixtures_cached(
         )
     return rows
 
+def _enrich_bigballs_forms(fixtures, selected_league_ids):
+    """Inject real season-to-date team form when Big Balls supplied the fixtures."""
+    provider_list = getattr(provider, "providers", [])
+    bigballs = next(
+        (p for name, p in provider_list if name in {"bigballsdata", "big-balls-data", "bigballs"}),
+        None,
+    )
+    if bigballs is None or not fixtures:
+        return fixtures
+
+    league_map = {
+        "39": "epl",
+        "140": "laliga",
+        "78": "bundesliga",
+        "135": "serie-a",
+        "61": "ligue-1",
+        "94": "primeira-liga",
+        "253": "mls",
+        "71": "brazilian-serie-a",
+    }
+    slugs = list(dict.fromkeys(league_map.get(str(x), str(x)) for x in selected_league_ids))
+    for slug in slugs:
+        try:
+            payload = bigballs._get("standings", {"sport": "football", "league": slug})
+            tables = ((payload.get("data") or {}).get("standings") or [])
+            rows = {}
+            for table in tables:
+                if not isinstance(table, dict):
+                    continue
+                for row in table.get("rows") or []:
+                    if not isinstance(row, dict):
+                        continue
+                    name = str(row.get("team_name") or "").strip().casefold()
+                    played = int(row.get("games_played") or 0)
+                    if name and played:
+                        rows[name] = TeamForm(
+                            matches=played,
+                            wins=int(row.get("wins") or 0),
+                            draws=int(row.get("ties") or 0),
+                            losses=int(row.get("losses") or 0),
+                            goals_for=float(row.get("points_for") or 0),
+                            goals_against=float(row.get("points_against") or 0),
+                        )
+            for fx in fixtures:
+                hf = rows.get(fx.home_team.casefold())
+                af = rows.get(fx.away_team.casefold())
+                if hf:
+                    fx.home_form = hf
+                if af:
+                    fx.away_form = af
+        except Exception:
+            continue
+    return fixtures
+
+
 def fetch_package_fixtures(start, end, required_count, selected_league_ids):
     # Cache the complete 31-day pool for five minutes so changing unrelated
     # widgets does not repeat dozens of provider calls and consume quota.
@@ -351,6 +407,7 @@ def fetch_package_fixtures(start, end, required_count, selected_league_ids):
         _football_season_for(pool_start),
         provider,
     )
+    rows = _enrich_bigballs_forms(rows, selected_league_ids)
     return [fx for fx in rows if start <= fx.date <= end]
 engine = FootballProbabilityEngine(settings.max_score_goals, rho=settings.dixon_coles_rho)
 corners_cards_engine = CornersCardsEngine()
