@@ -1251,12 +1251,34 @@ else:
                     else:
                         package_fixtures = []
 
+                    # Daily packages are generated from background-approved picks.
+                    # The ML pipeline forecasts up to 31 days ahead, while the
+                    # dashboard's Daily window is only 24 hours. When fewer than
+                    # 10 approved fixtures are available in that 24-hour window,
+                    # fall forward to the next available approved fixtures within
+                    # the pipeline's 31-day forecast horizon instead of incorrectly
+                    # reporting an empty pool. This preserves the no-unreviewed-picks
+                    # rule and keeps the package generator usable on low-fixture days.
+                    approval_start = start
+                    approval_end = end
+                    if pkg == "Daily":
+                        approval_end = start + timedelta(days=31)
+
                     approved_rows = ml_store.list_ml_predictions(
                         limit=5000,
                         statuses=("approved",),
-                        kickoff_from_utc=start.isoformat(),
-                        kickoff_to_utc=end.isoformat(),
+                        kickoff_from_utc=approval_start.isoformat(),
+                        kickoff_to_utc=approval_end.isoformat(),
                     )
+
+                    if pkg == "Daily" and len(approved_rows) < 10:
+                        # Rebuild the fixture pool over the same 31-day horizon so
+                        # approved database rows can be matched to real provider
+                        # fixtures. Keep the original 24-hour window when it already
+                        # contains enough approved selections.
+                        package_fixtures = fetch_slip_fixtures(
+                            start, approval_end, "Monthly"
+                        )
                     # Provider fixture IDs are source-specific. The background
                     # pipeline and the dashboard can legitimately fetch the same
                     # match from different providers, so matching only on fixture_id
