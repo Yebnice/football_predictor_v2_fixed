@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from app.data_providers import AllSportsAPIProvider, ISportsAPIProvider, FootballDataOrgProvider, TheSportsDBProvider, build_provider, build_provider_from_settings
+from app.data_providers import AllSportsAPIProvider, ISportsAPIProvider, FootballDataOrgProvider, TheSportsDBProvider, OpenFootballProvider, build_provider, build_provider_from_settings
 from app.multi_provider import CompositeFootballProvider
 from app.schemas import Fixture, TeamForm
 
@@ -191,12 +191,56 @@ class TestFootballDataOrgProvider(unittest.TestCase):
         self.assertEqual(rows[0].season, "2026")
 
 
+class TestOpenFootballProvider(unittest.TestCase):
+    @patch("app.data_providers.httpx.Client.get")
+    def test_normalizes_fixture_and_builds_recent_form(self, mock_get):
+        mock_get.return_value = Resp({
+            "name": "Premier League 2026/27",
+            "matches": [
+                {"round": "Matchday 1", "date": "2026-09-10", "time": "15:00",
+                 "team1": "Arsenal FC", "team2": "Everton FC",
+                 "score": {"ht": [1, 0], "ft": [2, 0]}},
+                {"round": "Matchday 2", "date": "2026-09-17", "time": "15:00",
+                 "team1": "Arsenal FC", "team2": "Chelsea FC",
+                 "score": {"ft": [1, 1]}},
+                {"round": "Matchday 3", "date": "2026-09-19", "time": "15:00",
+                 "team1": "Arsenal FC", "team2": "Liverpool FC"}
+            ]
+        })
+        p = OpenFootballProvider(cache_ttl_seconds=0)
+        rows = p.fixtures(
+            datetime(2026, 9, 19, 0, tzinfo=timezone.utc),
+            datetime(2026, 9, 20, 0, tzinfo=timezone.utc),
+            league="en.1", season="2026-27",
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].fixture_id, "openfootball-2026_27-en.1-2")
+        self.assertEqual(rows[0].home_team, "Arsenal FC")
+        self.assertEqual(rows[0].status, "NS")
+        self.assertEqual(rows[0].home_form.matches, 2)
+        self.assertEqual(rows[0].home_form.wins, 1)
+        self.assertEqual(rows[0].home_form.draws, 1)
+        self.assertEqual(mock_get.call_count, 1)
+
+    def test_season_resolution(self):
+        start = datetime(2027, 1, 10, tzinfo=timezone.utc)
+        self.assertEqual(OpenFootballProvider._season_label(start, None), "2026-2027")
+        self.assertEqual(OpenFootballProvider._season_label(start, 2026), "2026-2027")
+
+
 class TestProviderRouter(unittest.TestCase):
     def test_thesportsdb_refuses_fake_live_mode(self):
         p = TheSportsDBProvider(cache_ttl_seconds=0)
         with self.assertRaises(ValueError):
             p.fixtures(datetime(2026, 9, 18, tzinfo=timezone.utc),
                        datetime(2026, 9, 18, 19, tzinfo=timezone.utc), live=True)
+
+    def test_auto_build_includes_openfootball_without_key(self):
+        p = build_provider(
+            "auto", "", "", provider_chain="openfootball,api-football",
+        )
+        self.assertIsInstance(p, CompositeFootballProvider)
+        self.assertEqual(p.provider_names, ["openfootball"])
 
     def test_auto_build_skips_unconfigured_keyed_providers(self):
         p = build_provider(
