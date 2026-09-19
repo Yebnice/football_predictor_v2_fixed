@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     football_api_base_url: str = ""
     football_api_key: str = ""
     api_football_key: str = ""
+    # Comma-separated API-Football keys. The provider rotates/fails over across all keys.
+    api_football_keys: str = ""
     api_football_leagues: str = "39,140,78,135"
     api_football_use_standings_form: bool = True
     api_football_max_active_leagues: int = 4
