@@ -115,8 +115,8 @@ class TestBSDProvider(unittest.TestCase):
     def test_normalizes_fixture(self, mock_get):
         mock_get.return_value = Resp({
             "id": 223510,
-            "kickoff": "2026-09-19T15:00:00+00:00",
-            "status": "upcoming",
+            "event_date": "2026-09-19T15:00:00+00:00",
+            "status": "notstarted",
             "league": {"id": 10, "name": "Premier League"},
             "season": {"id": 2026, "name": "Premier League 2026/27"},
             "home_team": {"id": 1, "name": "Arsenal"},
@@ -133,15 +133,22 @@ class TestBSDProvider(unittest.TestCase):
         self.assertEqual(fx.stats["league_id"], 10)
         self.assertEqual(p.client.headers["Authorization"], "Token key")
 
-    def test_normalizes_consensus_odds(self):
+    def test_normalizes_documented_consensus_odds(self):
         out = BSDProvider._normalise_odds({
             "event_id": 223510,
-            "odds": {"home_win": 1.80, "draw": 3.60, "away_win": 4.50, "btts_yes": 1.95}
+            "odds": {
+                "match_winner": {"home": 2.10, "draw": 3.20, "away": 3.60},
+                "over_under": {"over_25": 2.05, "under_25": 1.78},
+                "btts": {"yes": 2.00, "no": 1.80},
+            },
         })
-        self.assertEqual(out["home"], 1.80)
-        self.assertEqual(out["draw"], 3.60)
-        self.assertEqual(out["away"], 4.50)
-        self.assertEqual(out["btts_yes"], 1.95)
+        self.assertEqual(out["home"], 2.10)
+        self.assertEqual(out["draw"], 3.20)
+        self.assertEqual(out["away"], 3.60)
+        self.assertEqual(out["over_2.5"], 2.05)
+        self.assertEqual(out["under_2.5"], 1.78)
+        self.assertEqual(out["btts_yes"], 2.00)
+        self.assertEqual(out["btts_no"], 1.80)
 
     @patch("app.data_providers.httpx.Client.get")
     def test_fixture_by_id_enriches_form_and_odds(self, mock_get):
