@@ -990,7 +990,7 @@ else:
                     render_markdown(f"""
                     <div style="background: var(--background-card); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border: 1px solid var(--primary-color);">
                         <h3 style="margin: 0 0 1rem 0;">📊 {s.period.title()} Slip #{s.slip_number}</h3>
-                        <p style="color: var(--text-secondary); margin: 0 0 1rem 0;">{len(s.selections)} high-confidence selections</p>
+                        <p style="color: var(--text-secondary); margin: 0 0 1rem 0;">{len(s.selections)} matches</p>
                     </div>
                     """, unsafe_allow_html=True)
 
