@@ -14,15 +14,28 @@ PERIOD_RULES = {
 }
 
 CORE_MAJOR_LEAGUE_ALIASES = {
-    "England — Premier League": ("premier league",),
-    "Spain — LaLiga": ("laliga", "la liga"),
-    "Germany — Bundesliga": ("bundesliga",),
-    "Italy — Serie A": ("serie a",),
-    "France — Ligue 1": ("ligue 1",),
-    "Belgium — Jupiler Pro League": ("jupiler",),
-    "Netherlands — Eredivisie": ("eredivisie",),
-    "Portugal — Primeira Liga": ("primeira liga",),
+    "England — Premier League": ("premier league", "english premier league"),
+    "Spain — LaLiga": ("laliga", "la liga", "spain primera división", "spain primera division"),
+    "Germany — Bundesliga": ("bundesliga", "deutsche bundesliga", "german bundesliga"),
+    "Italy — Serie A": ("serie a", "italian serie a"),
+    "France — Ligue 1": ("ligue 1", "french ligue 1"),
+    "Belgium — Jupiler Pro League": ("jupiler pro league", "pro league"),
+    "Netherlands — Eredivisie": ("eredivisie", "netherlands eredivisie"),
+    "Portugal — Primeira Liga": ("primeira liga", "portuguese primeira liga", "liga portugal betclic"),
 }
+
+def _league_text(value: str) -> str:
+    return " ".join(
+        str(value or "").strip().casefold().replace("-", " ").split()
+    )
+
+def _matches_major(league: str, major_name: str) -> bool:
+    """Match a competition name without broad substring collisions."""
+    text = _league_text(league)
+    return any(
+        text == alias or text.startswith(alias + " ")
+        for alias in CORE_MAJOR_LEAGUE_ALIASES.get(major_name, ())
+    )
 
 
 def _tip_eligible(market) -> bool:
@@ -161,16 +174,11 @@ class SlipGenerator:
                 f"{period.title()} slips require at least {minimum}."
             )
 
-        def league_text(value: str) -> str:
-            return " ".join(
-                str(value or "").strip().casefold().replace("-", " ").split()
-            )
-
         major_to_fixtures: dict[str, list[str]] = defaultdict(list)
         for fixture_id in fixture_ids:
-            league = league_text(by_fixture[fixture_id][0].get("league"))
-            for major_name, aliases in CORE_MAJOR_LEAGUE_ALIASES.items():
-                if any(alias in league for alias in aliases):
+            league = by_fixture[fixture_id][0].get("league")
+            for major_name in CORE_MAJOR_LEAGUE_ALIASES:
+                if _matches_major(league, major_name):
                     major_to_fixtures[major_name].append(fixture_id)
                     break
 
@@ -390,15 +398,11 @@ class SlipGenerator:
                     )
 
                     if len(available_majors) <= target:
-                        selected_leagues = {
-                            league_text(item["league"]) for item in selected
-                        }
                         missing = []
                         for major_name in available_majors:
-                            aliases = CORE_MAJOR_LEAGUE_ALIASES[major_name]
                             if not any(
-                                any(alias in league for alias in aliases)
-                                for league in selected_leagues
+                                _matches_major(item["league"], major_name)
+                                for item in selected
                             ):
                                 missing.append(major_name)
                         if missing:
@@ -456,7 +460,7 @@ class SlipGenerator:
                 )
 
             for item in slip.selections:
-                if league_text(item.get("league")) in {"", "unknown", "n/a", "none"}:
+                if _league_text(item.get("league")) in {"", "unknown", "n/a", "none"}:
                     raise ValueError(
                         f"Slip #{slip.slip_number} contains an unknown league."
                     )
