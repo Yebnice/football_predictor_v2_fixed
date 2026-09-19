@@ -224,8 +224,9 @@ class TestOpenFootballProvider(unittest.TestCase):
 
     def test_season_resolution(self):
         start = datetime(2027, 1, 10, tzinfo=timezone.utc)
-        self.assertEqual(OpenFootballProvider._season_label(start, None), "2026-2027")
-        self.assertEqual(OpenFootballProvider._season_label(start, 2026), "2026-2027")
+        self.assertEqual(OpenFootballProvider._season_label(start, None), "2026-27")
+        self.assertEqual(OpenFootballProvider._season_label(start, 2026), "2026-27")
+        self.assertEqual(OpenFootballProvider._season_label(start, "2026-2027"), "2026-27")
 
 
 class TestProviderRouter(unittest.TestCase):
