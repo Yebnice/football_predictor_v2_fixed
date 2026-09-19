@@ -147,55 +147,117 @@ class SlipGenerator:
         fixture_ids = list(by_fixture)
         minimum = rule["min_matches"]
         maximum = rule["max_matches"]
+
         if count is not None:
-            # Legacy callers can still provide a fixed size, but it must remain
-            # inside the product rule for the selected period.
             count = int(count)
             if count < minimum or count > maximum:
-                raise ValueError(f"{period.title()} slip size must be {minimum}-{maximum} matches.")
+                raise ValueError(
+                    f"{period.title()} slip size must be {minimum}-{maximum} matches."
+                )
+
         if len(fixture_ids) < minimum:
             raise ValueError(
-                f"Only {len(fixture_ids)} eligible fixtures; {period.title()} slips require at least {minimum}."
+                f"Only {len(fixture_ids)} eligible fixtures; "
+                f"{period.title()} slips require at least {minimum}."
             )
 
-        out: list[Slip] = []
-        used_signatures: set[tuple[str, ...]] = set()
+        def league_text(value: str) -> str:
+            return " ".join(
+                str(value or "").strip().casefold().replace("-", " ").split()
+            )
+
+        major_to_fixtures: dict[str, list[str]] = defaultdict(list)
+        for fixture_id in fixture_ids:
+            league = league_text(by_fixture[fixture_id][0].get("league"))
+            for major_name, aliases in CORE_MAJOR_LEAGUE_ALIASES.items():
+                if any(alias in league for alias in aliases):
+                    major_to_fixtures[major_name].append(fixture_id)
+                    break
+
+        available_majors = [
+            name for name in CORE_MAJOR_LEAGUE_ALIASES
+            if major_to_fixtures.get(name)
+        ]
+
+        family_to_fixtures: dict[str, list[str]] = defaultdict(list)
+        for fixture_id in fixture_ids:
+            for item in by_fixture[fixture_id]:
+                family_to_fixtures[item["family"]].append(fixture_id)
+
         used_fixture_counts: Counter[str] = Counter()
         used_exact_outcomes: Counter[tuple[str, str, str]] = Counter()
         used_families: Counter[str] = Counter()
 
-        for slip_index in range(1, requested_slips + 1):
-            seed = hashlib.sha256(
-                f"{self.salt}|{period}|{now.date().isoformat()}|{slip_index}".encode()
-            ).hexdigest()
-            rng = random.Random(seed)
-            target = count if count is not None else self._target_size(period, rng)
-            # Never exceed the available unique fixtures. The lower bound is
-            # checked above, so this still stays inside the product range.
-            target = min(target, len(fixture_ids))
+        def choose_candidate(
+            candidates: list[dict],
+            rng: random.Random,
+            slip_family_counts: Counter[str],
+            *,
+            prefer_new_family: bool = True,
+        ) -> dict:
+            if not candidates:
+                raise ValueError("No candidate markets available for fixture.")
+
+            # Reused fixtures rotate through genuinely different exact outcomes
+            # before repeating one already published in an earlier slip.
+            min_exact = min(
+                used_exact_outcomes[
+                    (item["fixture_id"], item["market"], item["selection"])
+                ]
+                for item in candidates
+            )
+            fresh = [
+                item for item in candidates
+                if used_exact_outcomes[
+                    (item["fixture_id"], item["market"], item["selection"])
+                ] == min_exact
+            ]
+
+            if prefer_new_family:
+                new_family = [
+                    item for item in fresh
+                    if slip_family_counts[item["family"]] == 0
+                ]
+                if new_family:
+                    fresh = new_family
+
+            weights = []
+            for item in fresh:
+                exact_key = (item["fixture_id"], item["market"], item["selection"])
+                weights.append(
+                    max(0.001, float(item["probability"]) ** 2.5)
+                    * (1.0 / (1.0 + used_exact_outcomes[exact_key]))
+                    * (1.0 / (1.0 + slip_family_counts[item["family"]]))
+                    * (1.0 / (1.0 + used_families[item["family"]] * 0.15))
+                )
+            return dict(rng.choices(fresh, weights=weights, k=1)[0])
+
+        def build_one_slip(
+            slip_index: int,
+            rng: random.Random,
+            target: int,
+        ) -> tuple[list[dict], tuple[str, ...]]:
             selected: list[dict] = []
+            seeded_fixtures: set[str] = set()
             slip_family_counts: Counter[str] = Counter()
 
-            seeded_fixtures: set[str] = set()
+            def add_item(item: dict) -> None:
+                selected.append(dict(item))
+                fid = item["fixture_id"]
+                seeded_fixtures.add(fid)
+                slip_family_counts[item["family"]] += 1
+                used_fixture_counts[fid] += 1
+                used_exact_outcomes[
+                    (fid, item["market"], item["selection"])
+                ] += 1
+                used_families[item["family"]] += 1
 
-            # Major-league coverage is a package rule, not a suggestion. When a
-            # core major has eligible fixtures in the requested period, reserve
-            # one different fixture from that competition in every slip that
-            # has room. This keeps "all leagues" broad while preventing the
-            # package from silently becoming dominated by one or two feeds.
-            major_to_fixtures: dict[str, list[str]] = defaultdict(list)
-            for fixture_id in fixture_ids:
-                for item in by_fixture[fixture_id]:
-                    league_text = " ".join(str(item.get("league") or "").casefold().replace("-", " ").split())
-                    for major_name, aliases in CORE_MAJOR_LEAGUE_ALIASES.items():
-                        if any(alias in league_text for alias in aliases):
-                            major_to_fixtures[major_name].append(fixture_id)
-                            break
-
-            major_order = [name for name in CORE_MAJOR_LEAGUE_ALIASES if major_to_fixtures.get(name)]
-            # Rotate the starting competition while still covering every
-            # available core major once per slip whenever the target permits it.
-            major_order = major_order[slip_index - 1:] + major_order[:slip_index - 1]
+            # Reserve one fixture from every core major that has at least one
+            # eligible fixture. The remaining slots are open to all leagues.
+            major_order = (
+                available_majors[slip_index - 1:]
+                + available_majors[:slip_index - 1]
+            )
             for major_name in major_order:
                 if len(selected) >= target:
                     break
@@ -207,28 +269,24 @@ class SlipGenerator:
                     continue
                 candidates.sort(key=lambda fid: (used_fixture_counts[fid], fid))
                 fid = candidates[rng.randrange(min(len(candidates), 5))]
-                family_candidates = by_fixture[fid]
-                chosen = rng.choice(family_candidates)
-                selected.append(dict(chosen))
-                seeded_fixtures.add(fid)
-                slip_family_counts[chosen["family"]] += 1
-                used_fixture_counts[fid] += 1
-                used_exact_outcomes[(fid, chosen["market"], chosen["selection"])] += 1
-                used_families[chosen["family"]] += 1
+                add_item(
+                    choose_candidate(
+                        by_fixture[fid],
+                        rng,
+                        slip_family_counts,
+                        prefer_new_family=True,
+                    )
+                )
 
-            # Then seed several different outcome families. This prevents a
-            # package from collapsing into dozens of identical Under/Double
-            # Chance selections after the required league coverage is met.
-            family_to_fixtures: dict[str, list[str]] = defaultdict(list)
-            for fixture_id in fixture_ids:
-                for item in by_fixture[fixture_id]:
-                    family_to_fixtures[item["family"]].append(fixture_id)
-
+            # Seed distinct market/outcome families before general filling.
+            desired_family_count = min(5, len(family_to_fixtures), target)
             family_order = list(family_to_fixtures)
             rng.shuffle(family_order)
-            desired_family_count = min(4, len(family_order), target)
             for family in family_order:
-                if len(slip_family_counts) >= desired_family_count or len(selected) >= target:
+                if (
+                    len(selected) >= target
+                    or len(slip_family_counts) >= desired_family_count
+                ):
                     break
                 candidates = [
                     fid for fid in dict.fromkeys(family_to_fixtures[family])
@@ -239,129 +297,179 @@ class SlipGenerator:
                 candidates.sort(key=lambda fid: (used_fixture_counts[fid], fid))
                 fid = candidates[rng.randrange(min(len(candidates), 5))]
                 family_candidates = [
-                    item for item in by_fixture[fid] if item["family"] == family
+                    item for item in by_fixture[fid]
+                    if item["family"] == family
                 ]
-                chosen = rng.choice(family_candidates)
-                selected.append(dict(chosen))
-                seeded_fixtures.add(fid)
-                slip_family_counts[family] += 1
-                used_fixture_counts[fid] += 1
-                used_exact_outcomes[(fid, chosen["market"], chosen["selection"])] += 1
-                used_families[family] += 1
-
-            # Sample without replacement by fixture for the remaining slots. Lower-use fixtures and
-            # higher-probability outcomes are preferred, but the RNG seed makes
-            # each package reproducible.
-            available = [fid for fid in fixture_ids if fid not in seeded_fixtures]
-            while available and len(selected) < target:
-                weighted: list[tuple[str, float]] = []
-                for fixture_id in available:
-                    candidates = by_fixture[fixture_id]
-                    best_weight = 0.0
-                    for item in candidates:
-                        exact_key = (fixture_id, item["market"], item["selection"])
-                        reuse_penalty = 1.0 / (1.0 + used_exact_outcomes[exact_key])
-                        fixture_penalty = 1.0 / (1.0 + used_fixture_counts[fixture_id])
-                        family_penalty = 1.0 / (1.0 + slip_family_counts[item["family"]] + used_families[item["family"]] * 0.15)
-                        best_weight = max(
-                            best_weight,
-                            max(0.001, float(item["probability"]) ** 2.5)
-                            * reuse_penalty
-                            * fixture_penalty
-                            * family_penalty,
-                        )
-                    weighted.append((fixture_id, best_weight))
-
-                ids = [x[0] for x in weighted]
-                weights = [x[1] for x in weighted]
-                fixture_id = rng.choices(ids, weights=weights, k=1)[0]
-                available.remove(fixture_id)
-
-                candidates = sorted(
-                    by_fixture[fixture_id],
-                    key=lambda item: (
-                        1.0 / (1.0 + used_exact_outcomes[
-                            (fixture_id, item["market"], item["selection"])
-                        ]),
-                        1.0 / (1.0 + used_fixture_counts[fixture_id]),
-                        float(item["probability"]),
-                    ),
-                    reverse=True,
+                add_item(
+                    choose_candidate(
+                        family_candidates,
+                        rng,
+                        slip_family_counts,
+                        prefer_new_family=True,
+                    )
                 )
-                # Randomly choose among the strongest candidates to avoid five
-                # slips collapsing onto the same exact market outcome.
-                top = candidates[: min(3, len(candidates))]
-                choice_weights = [
-                    max(0.001, float(item["probability"]) ** 2.5)
-                    * (1.0 / (1.0 + used_exact_outcomes[
-                        (fixture_id, item["market"], item["selection"])
-                    ]))
-                    * (1.0 / (1.0 + slip_family_counts[item["family"]]))
-                    * (1.0 / (1.0 + used_families[item["family"]] * 0.15))
-                    for item in top
-                ]
-                chosen = rng.choices(top, weights=choice_weights, k=1)[0]
-                selected.append(dict(chosen))
-                used_fixture_counts[fixture_id] += 1
-                used_exact_outcomes[
-                    (fixture_id, chosen["market"], chosen["selection"])
-                ] += 1
-                slip_family_counts[chosen["family"]] += 1
-                used_families[chosen["family"]] += 1
 
-            if len(selected) < target:
+            available = [
+                fid for fid in fixture_ids if fid not in seeded_fixtures
+            ]
+            while available and len(selected) < target:
+                fixture_weights: list[tuple[str, float]] = []
+                for fid in available:
+                    best = 0.001
+                    for item in by_fixture[fid]:
+                        exact_key = (fid, item["market"], item["selection"])
+                        best = max(
+                            best,
+                            max(0.001, float(item["probability"]) ** 2.5)
+                            * (1.0 / (1.0 + used_exact_outcomes[exact_key]))
+                            * (1.0 / (1.0 + used_fixture_counts[fid]))
+                            * (1.0 / (1.0 + slip_family_counts[item["family"]]))
+                            * (
+                                1.0
+                                / (1.0 + used_families[item["family"]] * 0.15)
+                            ),
+                        )
+                    fixture_weights.append((fid, best))
+
+                ids = [fid for fid, _ in fixture_weights]
+                weights = [weight for _, weight in fixture_weights]
+                fid = rng.choices(ids, weights=weights, k=1)[0]
+                available.remove(fid)
+                add_item(
+                    choose_candidate(
+                        by_fixture[fid],
+                        rng,
+                        slip_family_counts,
+                        prefer_new_family=True,
+                    )
+                )
+
+            if len(selected) != target:
                 raise ValueError(
-                    f"Unable to generate Slip #{slip_index} with {target} matches from "
-                    f"{len(fixture_ids)} eligible fixtures."
+                    f"Unable to generate Slip #{slip_index} with {target} "
+                    f"matches from {len(fixture_ids)} eligible fixtures."
                 )
 
             signature = tuple(sorted(
-                f"{x['fixture_id']}|{x['market']}|{x['selection']}" for x in selected
+                f"{item['fixture_id']}|{item['market']}|{item['selection']}"
+                for item in selected
             ))
-            # With a sufficiently large pool this should always be unique. When
-            # the pool is small, try several deterministic alternatives before
-            # failing instead of silently duplicating a slip.
-            if signature in used_signatures:
-                for retry in range(1, 25):
-                    retry_seed = hashlib.sha256(
-                        f"{seed}|retry|{retry}".encode()
-                    ).hexdigest()
-                    retry_rng = random.Random(retry_seed)
-                    rng_backup = rng
-                    rng = retry_rng
-                    selected_retry: list[dict] = []
-                    available_retry = list(fixture_ids)
-                    while available_retry and len(selected_retry) < target:
-                        fid = retry_rng.choice(available_retry)
-                        available_retry.remove(fid)
-                        candidates = by_fixture[fid]
-                        selected_retry.append(
-                            dict(retry_rng.choice(candidates[: min(5, len(candidates))]))
-                        )
-                    if len(selected_retry) == target:
-                        retry_signature = tuple(sorted(
-                            f"{x['fixture_id']}|{x['market']}|{x['selection']}"
-                            for x in selected_retry
-                        ))
-                        if retry_signature not in used_signatures:
-                            selected = selected_retry
-                            signature = retry_signature
-                            rng = rng_backup
-                            break
-                    rng = rng_backup
+            return selected, signature
 
-            if signature in used_signatures:
+        out: list[Slip] = []
+        used_signatures: set[tuple[str, ...]] = set()
+
+        for slip_index in range(1, requested_slips + 1):
+            seed = hashlib.sha256(
+                f"{self.salt}|{period}|{now.date().isoformat()}|{slip_index}".encode()
+            ).hexdigest()
+            target = count if count is not None else self._target_size(
+                period, random.Random(seed)
+            )
+            target = min(target, len(fixture_ids))
+
+            success = False
+            last_error: Exception | None = None
+
+            # Every retry rebuilds the entire slip under the same rules. This
+            # prevents a retry from accidentally dropping major coverage,
+            # fixture uniqueness, or outcome diversification.
+            for attempt in range(60):
+                attempt_seed = hashlib.sha256(
+                    f"{seed}|attempt|{attempt}".encode()
+                ).hexdigest()
+                rng = random.Random(attempt_seed)
+
+                snapshot_fixture = used_fixture_counts.copy()
+                snapshot_exact = used_exact_outcomes.copy()
+                snapshot_family = used_families.copy()
+
+                try:
+                    selected, signature = build_one_slip(
+                        slip_index, rng, target
+                    )
+
+                    if len(available_majors) <= target:
+                        selected_leagues = {
+                            league_text(item["league"]) for item in selected
+                        }
+                        missing = []
+                        for major_name in available_majors:
+                            aliases = CORE_MAJOR_LEAGUE_ALIASES[major_name]
+                            if not any(
+                                any(alias in league for alias in aliases)
+                                for league in selected_leagues
+                            ):
+                                missing.append(major_name)
+                        if missing:
+                            raise ValueError(
+                                "Missing major leagues: " + ", ".join(missing)
+                            )
+
+                    if signature in used_signatures:
+                        raise ValueError("Duplicate slip signature")
+
+                    out.append(
+                        Slip(
+                            period,
+                            slip_index,
+                            now,
+                            selected,
+                            seed,
+                        )
+                    )
+                    used_signatures.add(signature)
+                    success = True
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    used_fixture_counts = snapshot_fixture
+                    used_exact_outcomes = snapshot_exact
+                    used_families = snapshot_family
+
+            if not success:
                 raise ValueError(
                     f"Unable to produce 5 different {period} slips from "
-                    f"{len(fixture_ids)} eligible fixtures."
+                    f"{len(fixture_ids)} eligible fixtures"
+                    + (f": {last_error}" if last_error else ".")
                 )
 
-            used_signatures.add(signature)
-            # The file format stores only the selection fields; family is an
-            # internal diversification aid and is intentionally not exported.
-            for item in selected:
-                item.pop("family", None)
-            out.append(Slip(period, slip_index, now, selected, seed))
+        # Final package-level validation is deliberately strict because this is
+        # the last gate before the JSON is presented to the user.
+        if len(out) != 5:
+            raise ValueError("Slip package must contain exactly 5 slips.")
+
+        for slip in out:
+            expected_min, expected_max = rule["min_matches"], rule["max_matches"]
+            if not expected_min <= len(slip.selections) <= expected_max:
+                raise ValueError(
+                    f"{period.title()} Slip #{slip.slip_number} is outside "
+                    f"the {expected_min}-{expected_max} match range."
+                )
+
+            fixture_ids_in_slip = [
+                str(item.get("fixture_id", "")) for item in slip.selections
+            ]
+            if len(fixture_ids_in_slip) != len(set(fixture_ids_in_slip)):
+                raise ValueError(
+                    f"Slip #{slip.slip_number} contains a duplicate fixture."
+                )
+
+            for item in slip.selections:
+                if league_text(item.get("league")) in {"", "unknown", "n/a", "none"}:
+                    raise ValueError(
+                        f"Slip #{slip.slip_number} contains an unknown league."
+                    )
+
+        signatures = {
+            tuple(sorted(
+                f"{item['fixture_id']}|{item['market']}|{item['selection']}"
+                for item in slip.selections
+            ))
+            for slip in out
+        }
+        if len(signatures) != 5:
+            raise ValueError("Generated slip package contains duplicate slips.")
 
         return out
 
