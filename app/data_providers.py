@@ -1919,42 +1919,54 @@ class ApiFootballProvider(FootballProvider):
             f"API-Football request failed after trying all {len(self.api_keys)} configured key(s): {last_error}"
         )
 
-    def global_fixtures(self, start: datetime, end: datetime) -> list[Fixture]:
+    def global_fixtures(self, start: datetime, end: datetime, max_results: int = 500) -> list[Fixture]:
         """Fetch upcoming fixtures across the provider's global competition universe.
 
-        API-Football documents /fixtures?date=YYYY-MM-DD as a global daily feed and
-        also supports from/to date-range filtering. This path intentionally does
-        not require API_FOOTBALL_LEAGUES, so the world-football slip search is not
-        limited to the four default competitions.
+        API-Football documents /fixtures date/date-range queries without a league
+        restriction. Paginate only until max_results is reached so a monthly
+        world-football search does not download an entire season.
         """
-        params = {
-            "from": start.date().isoformat(),
-            "to": end.date().isoformat(),
-        }
-        payload = self._get("/fixtures", params, cacheable=True)
-        rows = payload.get("response", [])
-        if not isinstance(rows, list):
-            rows = []
-
+        max_results = max(1, int(max_results))
         out: list[Fixture] = []
         seen: set[str] = set()
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            fx = _normalize_api_football_fixture(row)
-            if not (start <= fx.date <= end):
-                continue
-            if str(fx.home_team).strip().casefold() in {"", "unknown", "home"}:
-                continue
-            if str(fx.away_team).strip().casefold() in {"", "unknown", "away"}:
-                continue
-            if fx.fixture_id in seen:
-                continue
-            seen.add(fx.fixture_id)
-            out.append(fx)
+        page = 1
+
+        while len(out) < max_results:
+            params = {
+                "from": start.date().isoformat(),
+                "to": end.date().isoformat(),
+                "page": page,
+            }
+            payload = self._get("/fixtures", params, cacheable=True)
+            rows = payload.get("response", [])
+            if not isinstance(rows, list) or not rows:
+                break
+
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                fx = _normalize_api_football_fixture(row)
+                if not (start <= fx.date <= end):
+                    continue
+                if str(fx.home_team).strip().casefold() in {"", "unknown", "home"}:
+                    continue
+                if str(fx.away_team).strip().casefold() in {"", "unknown", "away"}:
+                    continue
+                if fx.fixture_id in seen:
+                    continue
+                seen.add(fx.fixture_id)
+                out.append(fx)
+                if len(out) >= max_results:
+                    break
+
+            paging = payload.get("paging") or {}
+            total = int(paging.get("total") or page)
+            if page >= total:
+                break
+            page += 1
 
         out.sort(key=lambda item: item.date)
-        return out
+        return out[:max_results]
 
     def fixtures(self, start: datetime, end: datetime, live: bool = False,
                  league: int | str | None = None, season: int | str | None = None) -> list[Fixture]:
