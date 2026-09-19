@@ -33,6 +33,50 @@ class TestApiFootballProvider(unittest.TestCase):
         self.assertEqual(rows[0].stats["source"], "api-football")
 
     @patch("app.data_providers.httpx.Client.get")
+    def test_global_fixtures_does_not_require_configured_leagues(self, mock_get):
+        class R:
+            status_code = 200
+            def __init__(self, payload):
+                self._payload = payload
+            def raise_for_status(self): pass
+            def json(self):
+                return self._payload
+
+        mock_get.return_value = R({
+            "errors": {},
+            "paging": {"current": 1, "total": 1},
+            "response": [{
+                "fixture": {
+                    "id": 987,
+                    "date": "2026-09-20T15:00:00+00:00",
+                    "status": {"short": "NS"},
+                },
+                "league": {"name": "Ghana Premier League", "season": 2026},
+                "teams": {
+                    "home": {"name": "Hearts of Oak"},
+                    "away": {"name": "Asante Kotoko"},
+                },
+                "goals": {"home": None, "away": None},
+                "score": {"periods": {}},
+            }],
+        })
+        p = ApiFootballProvider(
+            "key",
+            default_leagues="39,140,78,135",
+            cache_ttl_seconds=0,
+        )
+        start = datetime(2026, 9, 20, tzinfo=timezone.utc)
+        end = datetime(2026, 9, 20, 23, 59, tzinfo=timezone.utc)
+        rows = p.global_fixtures(start, end)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].league, "Ghana Premier League")
+        _, kwargs = mock_get.call_args
+        self.assertNotIn("league", kwargs["params"])
+        self.assertIn("from", kwargs["params"])
+        self.assertIn("to", kwargs["params"])
+
+
+    @patch("app.data_providers.httpx.Client.get")
     def test_fixtures_auto_includes_starting_year_as_season(self, mock_get):
         class R:
             def raise_for_status(self): pass
