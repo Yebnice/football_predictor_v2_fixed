@@ -334,7 +334,12 @@ class AIPredictionAgent:
         return evidence
 
     @staticmethod
-    def _prompt(records: list[dict[str, Any]]) -> str:
+    def _prompt(records: list[dict[str, Any]], background_context: dict[str, Any] | None = None) -> str:
+        context_text = (
+            "\n\nBACKGROUND PIPELINE CONTEXT (factual, computed before your review):\n"
+            + json.dumps(background_context, ensure_ascii=False, default=str)
+            if background_context else ""
+        )
         return (
             "You are an AI football prediction review agent. Review the supplied "
             "fixtures using only the deterministic model candidates and the factual "
@@ -347,8 +352,12 @@ class AIPredictionAgent:
             "quantitative input. Prefer rejection over a speculative approval when "
             "the evidence contradicts the candidate, but do not reject solely because "
             "optional deep evidence is unavailable; instead record that limitation in "
-            "risk_flags. Return one decision for every fixture presented.\n\n"
+            "risk_flags. Return one decision for every fixture presented.\n"
+            "Treat the background pipeline context as evidence about model quality and "
+            "data health. If calibration, log loss, drift, or data coverage is weak, "
+            "be more conservative and use risk_flags. Do not change those metrics.\n\n"
             + json.dumps(records, ensure_ascii=False, default=str)
+            + context_text
         )
 
     @staticmethod
@@ -542,6 +551,7 @@ class AIPredictionAgent:
         *,
         candidate_limit: int = 60,
         deep_evidence_limit: int = 20,
+        background_context: dict[str, Any] | None = None,
     ) -> AgentRun:
         records, _ = self._build_records(
             fixtures,
@@ -570,7 +580,7 @@ class AIPredictionAgent:
         merged_all: dict[str, AgentDecision] = {}
 
         for batch_number, batch in enumerate(batches, start=1):
-            prompt = self._prompt(batch)
+            prompt = self._prompt(batch, background_context=background_context)
             gemini_rows: list[dict[str, Any]] = []
             groq_rows: list[dict[str, Any]] = []
 
