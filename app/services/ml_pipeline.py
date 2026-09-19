@@ -443,49 +443,97 @@ def _collect_from_provider(
     *,
     max_results: int = 800,
 ) -> list[Fixture]:
+    """Collect a bounded historical+forecast window with score-aware merging.
+
+    Background ML needs completed scores for training. A generic provider merge
+    can legitimately return a fixture-only copy before a results provider returns
+    the same match with its final score. For ML collection we therefore make a
+    second, provider-specific pass whenever score coverage is too low and always
+    prefer scored records during de-duplication.
+    """
     rows: list[Fixture] = []
     providers = getattr(provider, "providers", [])
+
+    # API-Football has a dedicated global endpoint, so use it when available.
     for name, child in providers:
         if name in {"api-football", "api-sports", "apisports"}:
             fetch = getattr(child, "global_fixtures", None)
             if callable(fetch):
                 try:
                     rows.extend(fetch(start, end, max_results=max_results))
-                    break
                 except Exception as exc:
                     logger.warning("API-Football global ML collection failed: %s", exc)
-    if not rows:
-        # The 180-day training window can cross a football season boundary.
-        # Query both the season containing the start date and the current
-        # season so March-May results from the previous season are available
-        # alongside the current-season fixtures.
-        collected: list[Fixture] = []
-        seen_season_errors: list[str] = []
-        for season_year in dict.fromkeys((start.year, start.year - 1)):
-            try:
-                collected.extend(
-                    list(provider.fixtures(start, end, season=season_year) or [])
-                )
-            except Exception as exc:
-                seen_season_errors.append(f"{season_year}: {exc}")
-        rows = collected
-        if not rows and seen_season_errors:
+
+    # Normal composite collection. Query both adjacent seasons because the
+    # 180-day window crosses the 2025/26 -> 2026/27 boundary.
+    for season_year in dict.fromkeys((start.year, start.year - 1)):
+        try:
+            rows.extend(list(provider.fixtures(start, end, season=season_year) or []))
+        except Exception as exc:
             logger.warning(
-                "Composite ML collection fallback failed across seasons: %s",
-                " | ".join(seen_season_errors),
+                "Composite ML collection failed for season %s: %s",
+                season_year,
+                exc,
             )
 
-    out: list[Fixture] = []
-    seen: set[tuple[str, str, str, str]] = set()
+    def has_score(fx: Fixture) -> bool:
+        return fx.home_score is not None and fx.away_score is not None
+
+    scored_count = sum(1 for fx in rows if has_score(fx))
+
+    # If the composite result contains too few historical scores, query each
+    # child provider directly. This bypasses provider-level deduplication and
+    # catches the important case where a fixture/schedule source has masked a
+    # richer historical-results source.
+    if providers and scored_count < MIN_TRAIN_ROWS:
+        for name, child in providers:
+            if name in {"api-football", "api-sports", "apisports"}:
+                # global_fixtures was already attempted above.
+                continue
+            for season_year in dict.fromkeys((start.year, start.year - 1)):
+                try:
+                    direct = list(
+                        child.fixtures(start, end, season=season_year) or []
+                    )
+                    rows.extend(direct)
+                except Exception as exc:
+                    logger.warning(
+                        "Direct ML history collection failed for %s season %s: %s",
+                        name,
+                        season_year,
+                        exc,
+                    )
+
+    # De-duplicate by the stable football identity while preferring a record
+    # that contains an actual final score.
+    by_key: dict[tuple[str, str, str, str], Fixture] = {}
     for fx in rows:
-        if not fx.fixture_id or str(fx.home_team).strip().casefold() in {"", "unknown"} or str(fx.away_team).strip().casefold() in {"", "unknown"}:
+        if (
+            not fx.fixture_id
+            or str(fx.home_team).strip().casefold() in {"", "unknown"}
+            or str(fx.away_team).strip().casefold() in {"", "unknown"}
+        ):
             continue
         key = _fixture_key(fx)
-        if key in seen:
+        current = by_key.get(key)
+        if current is None:
+            by_key[key] = fx
             continue
-        seen.add(key)
-        out.append(fx)
+        if not has_score(current) and has_score(fx):
+            by_key[key] = fx
+
+    out = list(by_key.values())
     out.sort(key=lambda x: x.date)
+
+    score_count = sum(1 for fx in out if has_score(fx))
+    logger.info(
+        "ML collection coverage: total=%s scored=%s unscored=%s window=%s..%s",
+        len(out),
+        score_count,
+        len(out) - score_count,
+        start.isoformat(),
+        end.isoformat(),
+    )
     return out[:max_results]
 
 
