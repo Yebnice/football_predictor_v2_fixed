@@ -1252,24 +1252,34 @@ else:
                     # source, which previously caused a valid approved pool to appear as 0.
                     approval_start = start
                     approval_end = end
-                    approved_rows = []
 
-                    active_model_version = None
-                    if active_ml:
-                        active_model_version = str(active_ml.get("model_version") or "") or None
+                    # Read the approved pool without SQL date/model filters. The
+                    # background and dashboard share Postgres, but ISO timestamp
+                    # formatting and model-version changes can otherwise make a
+                    # valid approved row disappear from a filtered query.
+                    all_approved_rows = ml_store.list_ml_predictions(
+                        limit=5000,
+                        statuses=("approved",),
+                    )
 
-                    def _load_approved_rows(window_end):
-                        kwargs = {
-                            "limit": 5000,
-                            "statuses": ("approved",),
-                            "kickoff_from_utc": approval_start.isoformat(),
-                            "kickoff_to_utc": window_end.isoformat(),
-                        }
-                        if active_model_version:
-                            kwargs["model_version"] = active_model_version
-                        return ml_store.list_ml_predictions(**kwargs)
+                    def _row_kickoff(row):
+                        try:
+                            return datetime.fromisoformat(
+                                str(row.get("kickoff_utc") or "").replace("Z", "+00:00")
+                            ).astimezone(timezone.utc)
+                        except Exception:
+                            return None
 
-                    approved_rows = _load_approved_rows(approval_end)
+                    def _rows_in_window(window_end):
+                        out = []
+                        for row in all_approved_rows:
+                            kickoff = _row_kickoff(row)
+                            if kickoff is not None and approval_start <= kickoff <= window_end:
+                                out.append(row)
+                        out.sort(key=lambda row: (_row_kickoff(row) or datetime.max.replace(tzinfo=timezone.utc), str(row.get("predicted_at") or "")))
+                        return out
+
+                    approved_rows = _rows_in_window(approval_end)
 
                     # Daily normally means the next 24 hours. On a low-fixture day,
                     # use the next available approved fixtures from the same trained
@@ -1277,7 +1287,7 @@ else:
                     # database-backed pool.
                     if pkg == "Daily" and len(approved_rows) < 10:
                         approval_end = start + timedelta(days=31)
-                        approved_rows = _load_approved_rows(approval_end)
+                        approved_rows = _rows_in_window(approval_end)
 
                     def _fixture_from_approved(row):
                         try:
