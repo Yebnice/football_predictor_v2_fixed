@@ -869,6 +869,9 @@ prediction_agent = AIPredictionAgent(
 )
 explainer = GroqExplainer(groq_api_key, groq_model)
 gemini_explainer = GeminiExplainer(gemini_api_key, gemini_model)
+# Background ML state is persistent. The UI only consumes predictions after the
+# scheduled trained-model + evaluation + AI-review pipeline has approved them.
+ml_store = Store(settings.db_path)
 
 # Modern Header
 render_markdown("""
@@ -898,7 +901,7 @@ with st.expander("Open the full function map", expanded=False):
         {
             "Area": "Prediction Windows",
             "Function": "Daily / Weekly / Monthly / Live",
-            "What it does": "Loads fixtures for the selected time horizon and runs the prediction interface.",
+            "What it does": "Selects the Daily, Weekly, Monthly or Live fixture window; prediction generation is handled by the background ML pipeline.",
             "Access": "All users",
         },
         {
@@ -916,19 +919,19 @@ with st.expander("Open the full function map", expanded=False):
         {
             "Area": "Match Predictions",
             "Function": "1X2 / Double Chance / DNB / BTTS / Goals",
-            "What it does": "Calculates probability-based outcomes from the statistical football model.",
+            "What it does": "Publishes outcomes only after the background trained model, evaluation/monitoring checks and AI-agent review have completed.",
             "Access": "All users",
         },
         {
             "Area": "Match Data",
             "Function": "Match Data Overview",
-            "What it does": "Shows kickoff, league, form, scoring rates, top model market and probability for the current fixture pool.",
+            "What it does": "Shows kickoff, league and form data for the current fixture pool without displaying prediction probabilities.",
             "Access": "All users",
         },
         {
             "Area": "Goal Markets",
             "Function": "Over / Under 1.5, 2.5, 3.5",
-            "What it does": "Shows model probabilities for standard total-goal lines.",
+            "What it does": "Available goal-market predictions are produced in the background package pipeline and shown only after generation.",
             "Access": "All users",
         },
         {
@@ -982,7 +985,7 @@ with st.expander("Open the full function map", expanded=False):
         {
             "Area": "Analytics",
             "Function": "Dashboard / probability analysis",
-            "What it does": "Displays probability distributions, market-type analysis and probability-versus-fair-odds views.",
+            "What it does": "Tracks background model quality, prediction performance and drift; prediction output itself is withheld until the AI gate passes.",
             "Access": "All users",
         },
         {
@@ -1145,6 +1148,35 @@ except Exception as e:
     st.error(f"Failed to fetch fixtures: {str(e)}")
     fixtures = []
 
+# Background ML status
+active_ml = ml_store.get_active_ml_model()
+latest_ml_drift = ml_store.latest_ml_drift()
+latest_ml_run = (ml_store.list_ml_runs(limit=1) or [None])[0]
+ml_metrics = {}
+if active_ml:
+    try:
+        ml_metrics = json.loads(active_ml.get("metrics_json") or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        ml_metrics = {}
+
+drift_label = "ALERT" if latest_ml_drift and bool(latest_ml_drift.get("alert")) else "OK"
+render_markdown(f"""
+<div style="background: var(--background-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; margin: 1rem 0;">
+    <strong>🧠 Background ML pipeline</strong>
+    <span style="color: var(--text-secondary); margin-left: 0.5rem;">
+        {"AI-gated and ready" if active_ml else "Waiting for first successful training run"}
+    </span>
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:0.6rem;color:var(--text-secondary);font-size:0.86rem;">
+        <span>Model: {esc(active_ml.get("algorithm", "—") if active_ml else "—")}</span>
+        <span>Training rows: {esc(active_ml.get("training_rows", 0) if active_ml else 0)}</span>
+        <span>Validation log loss: {esc(f"{ml_metrics.get('log_loss'):.4f}" if ml_metrics.get('log_loss') is not None else "—")}</span>
+        <span>Calibration ECE: {esc(f"{ml_metrics.get('calibration_ece'):.4f}" if ml_metrics.get('calibration_ece') is not None else "—")}</span>
+        <span>Drift: {drift_label}</span>
+        <span>Last run: {esc((latest_ml_run or {}).get("status", "—"))}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 # Fixture pool overview
 render_markdown(f"""
 <div style="display: flex; justify-content: space-between; align-items: center; margin: 2rem 0 1rem 0;">
@@ -1206,99 +1238,72 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-# Generate package button with modern styling
+# Generate package button. This never calls the AI agent in the foreground.
+    # It reads only predictions already approved by the background ML pipeline.
+    # There is no statistical-only fallback and no padding with unreviewed picks.
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🎯 Generate Prediction Package", type="primary", use_container_width=True):
             try:
-                with st.spinner("Generating predictions..."):
+                with st.spinner("Loading background-approved predictions..."):
                     if pkg in {"Daily", "Weekly", "Monthly"}:
                         package_fixtures = fetch_slip_fixtures(start, end, pkg)
                     else:
                         package_fixtures = []
 
-                    ai_decisions = None
-                    agent_run = None
-                    if pkg in {"Daily", "Weekly", "Monthly"} and package_fixtures:
-                        agent_limits = {
-                            "Daily": 40,
-                            "Weekly": 75,
-                            "Monthly": 125,
+                    approved_rows = ml_store.list_ml_predictions(
+                        limit=5000,
+                        statuses=("approved",),
+                        kickoff_from_utc=start.isoformat(),
+                        kickoff_to_utc=end.isoformat(),
+                    )
+                    approved_by_fixture = {}
+                    for row in approved_rows:
+                        fid = str(row.get("fixture_id") or "")
+                        if fid:
+                            approved_by_fixture.setdefault(fid, row)
+
+                    for fx in package_fixtures:
+                        row = approved_by_fixture.get(str(fx.fixture_id))
+                        if not row:
+                            continue
+                        try:
+                            if row.get("home_lambda") is not None:
+                                fx.home_xg = float(row["home_lambda"])
+                            if row.get("away_lambda") is not None:
+                                fx.away_xg = float(row["away_lambda"])
+                        except (TypeError, ValueError):
+                            continue
+
+                    ai_decisions = {
+                        fid: {
+                            "approved": True,
+                            "market": str(row.get("market") or ""),
+                            "selection": str(row.get("selection") or ""),
+                            "review_score": float(row.get("ai_review_score") or 0.0),
                         }
-                        deep_limits = {
-                            "Daily": 15,
-                            "Weekly": 25,
-                            "Monthly": 35,
-                        }
-                        with st.spinner("🤖 AI prediction agent is reviewing the strongest fixtures and checking deeper evidence..."):
-                            agent_run = prediction_agent.review_fixtures(
-                                package_fixtures,
-                                candidate_limit=agent_limits[pkg],
-                                deep_evidence_limit=deep_limits[pkg],
-                            )
+                        for fid, row in approved_by_fixture.items()
+                    }
 
-                        minimum_required = {
-                            "Daily": 10,
-                            "Weekly": 20,
-                            "Monthly": 20,
-                        }[pkg]
-                        if agent_run.decisions and len(agent_run.decisions) >= minimum_required:
-                            ai_decisions = agent_run.decisions
-                            st.caption(
-                                "AI agent reviewed "
-                                f"{agent_run.reviewed_fixtures} fixtures, deeply enriched "
-                                f"{agent_run.deep_reviewed_fixtures}, and approved "
-                                f"{agent_run.approved_fixtures}. "
-                                f"Reviewers: {', '.join(agent_run.providers_used) or 'none'}."
-                            )
-                        else:
-                            reason = (
-                                "AI did not return enough validated approvals for the "
-                                f"{pkg.lower()} minimum ({minimum_required}). "
-                                "The package therefore uses the statistical model rather "
-                                "than inventing or padding AI selections."
-                            )
-                            if agent_run.errors:
-                                reason += " " + " ".join(agent_run.errors[:2])
-                            st.warning(reason)
-
-                    effective_ai_decisions = ai_decisions
-
-                    try:
-                        if pkg == "Daily":
-                            generated = slips.daily(package_fixtures, ai_decisions=effective_ai_decisions)
-                        elif pkg == "Weekly":
-                            generated = slips.weekly(package_fixtures, ai_decisions=effective_ai_decisions)
-                        elif pkg == "Monthly":
-                            generated = slips.monthly(package_fixtures, ai_decisions=effective_ai_decisions)
-                        else:
-                            generated = []
-                    except ValueError as ai_package_error:
-                        if effective_ai_decisions is None:
-                            raise
-                        # AI review is an approval layer, not a reason to publish
-                        # a broken package. Re-run the deterministic generator
-                        # from the same verified fixture pool if AI-approved
-                        # selections cannot satisfy the package-level constraints
-                        # (minimum size, unique fixtures, major-league coverage,
-                        # and five distinct slips).
-                        st.warning(
-                            "The AI-approved selections could not satisfy the full "
-                            f"{pkg.lower()} package rules ({ai_package_error}). "
-                            "The app is falling back to the statistical model for "
-                            "this package rather than padding or fabricating picks."
+                    minimum_required = {"Daily": 10, "Weekly": 20, "Monthly": 20}.get(pkg, 0)
+                    eligible_count = sum(
+                        1 for fx in package_fixtures if str(fx.fixture_id) in ai_decisions
+                    )
+                    if not ai_decisions or eligible_count < minimum_required:
+                        raise ValueError(
+                            f"Background AI-approved pool has only {eligible_count} eligible fixtures; "
+                            f"{pkg.lower()} packages require at least {minimum_required}. "
+                            "The package is withheld until the scheduled ML pipeline completes successfully."
                         )
-                        effective_ai_decisions = None
-                        if pkg == "Daily":
-                            generated = slips.daily(package_fixtures)
-                        elif pkg == "Weekly":
-                            generated = slips.weekly(package_fixtures)
-                        elif pkg == "Monthly":
-                            generated = slips.monthly(package_fixtures)
-                        else:
-                            generated = []
 
-                    ai_decisions = effective_ai_decisions
+                    if pkg == "Daily":
+                        generated = slips.daily(package_fixtures, ai_decisions=ai_decisions)
+                    elif pkg == "Weekly":
+                        generated = slips.weekly(package_fixtures, ai_decisions=ai_decisions)
+                    elif pkg == "Monthly":
+                        generated = slips.monthly(package_fixtures, ai_decisions=ai_decisions)
+                    else:
+                        generated = []
 
                 if generated:
                     top_limit = {"Daily": 5, "Weekly": 10, "Monthly": 15}.get(pkg, 5)
@@ -1312,7 +1317,7 @@ else:
                     <div style="background: var(--background-card); border: 1px solid var(--primary-color); border-radius: 10px; padding: 1rem; margin: 1rem 0;">
                         <h3 style="margin: 0 0 0.35rem 0;">🏆 Top High-Confidence Predictions — {esc(pkg)}</h3>
                         <p style="color: var(--text-secondary); margin: 0;">
-                            Highest-confidence publishable predictions from the {esc(pkg.lower())} fixture pool.
+                            Highest-confidence publishable predictions from the background-trained and AI-approved {esc(pkg.lower())} pool.
                         </p>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1329,20 +1334,14 @@ else:
                             }
                             for item in top_predictions
                         ]
-                        st.dataframe(
-                            pd.DataFrame(top_rows),
-                            use_container_width=True,
-                            hide_index=True,
-                        )
-                    else:
-                        st.info(f"No high-confidence {pkg.lower()} predictions are available for the current fixture pool.")
+                        st.dataframe(pd.DataFrame(top_rows), use_container_width=True, hide_index=True)
 
                 if generated:
                     render_markdown(f"""
                     <div style="background: var(--background-card-alt); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; margin: 1rem 0;">
                         <strong>{pkg} package: {len(generated)} slips generated</strong>
                         <span style="color: var(--text-secondary); margin-left: 0.5rem;">
-                            All available leagues • diversified fixtures/outcomes
+                            Background trained model + AI-reviewed • all available leagues • diversified fixtures/outcomes
                         </span>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1372,7 +1371,6 @@ else:
                         use_container_width=True,
                         key=f"pdf-{pkg.lower()}-full-package",
                     )
-
                     st.download_button(
                         "📦 Download Full 5-Slip Package JSON",
                         json.dumps(combined_payload, default=str, indent=2),
@@ -1397,12 +1395,7 @@ else:
                         }
                         for item in s.selections
                     ]
-
-                    st.dataframe(
-                        pd.DataFrame(slip_rows),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                    st.dataframe(pd.DataFrame(slip_rows), use_container_width=True, hide_index=True)
 
                     simple_payload = {
                         "period": s.period,
@@ -1429,10 +1422,12 @@ else:
                             use_container_width=True,
                             key=f"pdf-{s.period}-{s.slip_number}",
                         )
+            except ValueError as exc:
+                st.warning(f"⚠️ {exc}")
             except Exception as exc:
                 st.error(f"❌ Failed to generate package: {str(exc)}")
 
-    # Saved-slip reader: JSON is the package interchange format. This lets
+# Saved-slip reader: JSON is the package interchange format. This lets
     # the same Streamlit app open a downloaded individual slip or the combined
     # five-slip package without requiring a separate JSON viewer.
     with st.expander("📂 Read a saved slip JSON", expanded=False):
@@ -1753,7 +1748,7 @@ render_markdown("""
 <div style="background: var(--background-card); border-radius: 12px; padding: 2rem; margin: 2rem 0; border: 1px solid var(--border-color);">
     <h3 style="margin: 0 0 1rem 0;">🏗️ System Architecture</h3>
     <div style="color: var(--text-secondary); line-height: 1.8; font-family: monospace;">
-        Football APIs → Normalization → Feature/Model Layer → Score Distribution → All Markets → Value/Risk → Randomized Slips → VIP/Auth/Payments
+        Football APIs → Historical/Upcoming Data Store → Leakage-safe Features → Trained Poisson Model → Log Loss/Calibration → Drift Monitoring → AI Agent Review Gate → Approved Predictions → Randomized Slips → VIP/Auth/Payments
     </div>
 </div>
 """, unsafe_allow_html=True)
