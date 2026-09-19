@@ -133,6 +133,42 @@ class TestBSDProvider(unittest.TestCase):
         self.assertEqual(fx.stats["league_id"], 10)
         self.assertEqual(p.client.headers["Authorization"], "Token key")
 
+    def test_resolves_api_football_major_ids_to_bsd_native_ids(self):
+        p = BSDProvider("key", cache_ttl_seconds=0)
+        expected = {
+            "39": 1,
+            "140": 3,
+            "78": 5,
+            "135": 4,
+            "61": 6,
+            "144": 14,
+            "88": 10,
+            "94": 2,
+        }
+        for api_id, bsd_id in expected.items():
+            self.assertEqual(p._resolve_league_id(api_id), bsd_id)
+
+    @patch("app.data_providers.httpx.Client.get")
+    def test_explicit_league_rejects_mismatched_rows(self, mock_get):
+        mock_get.return_value = Resp({
+            "results": [{
+                "id": 10150,
+                "event_date": "2026-09-20T17:00:00+00:00",
+                "status": "notstarted",
+                "league": {"id": 99, "name": "Brasileirao Serie A"},
+                "home_team": {"id": 1, "name": "Gremio Novorizontino"},
+                "away_team": {"id": 2, "name": "Sao Bernardo"},
+            }]
+        })
+        p = BSDProvider("key", cache_ttl_seconds=0)
+        rows = p.fixtures(
+            datetime(2026, 9, 20, tzinfo=timezone.utc),
+            datetime(2026, 9, 21, tzinfo=timezone.utc),
+            league="144",
+            season=2026,
+        )
+        self.assertEqual(rows, [])
+
     def test_normalizes_documented_consensus_odds(self):
         out = BSDProvider._normalise_odds({
             "event_id": 223510,
