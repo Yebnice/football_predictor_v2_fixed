@@ -1,33 +1,33 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-19T23:20:11.003324+00:00",
+  "generated_at": "2026-09-20T02:39:19.980769+00:00",
   "source": "github_actions_background_ml",
   "model": {
-    "version": "poisson-20260919231117-2d14f54b",
+    "version": "poisson-20260920023005-0a76f726",
     "algorithm": "poisson_regression",
-    "trained_at": 1789860000.0,
+    "trained_at": 1789870000.0,
     "training_rows": 253,
-    "validation_log_loss": 1.4352478089215768,
-    "calibration_ece": 0.4421307223422158
+    "validation_log_loss": 1.4479911523130382,
+    "calibration_ece": 0.4461380418353057
   },
   "last_run": {
-    "id": "8cb7f8c7-eff2-4de8-96bb-6503f9eb2d4a",
-    "run_type": "weekly",
-    "started_at": 1789860000.0,
+    "id": "a1723b2e-6dbe-40d8-8d06-fb071b45c6cc",
+    "run_type": "daily",
+    "started_at": 1789870000.0,
     "completed_at": null,
     "status": "running",
     "summary_json": "{}",
     "errors_json": "[]"
   },
   "drift": {
-    "id": "b5f00159-c22c-4062-bd86-09adb0730410",
-    "checked_at": 1789860000.0,
-    "model_version": "poisson-20260919231117-2d14f54b",
+    "id": "5d124f68-c575-425f-b76d-14f1a01fe7fc",
+    "checked_at": 1789870000.0,
+    "model_version": "poisson-20260920023005-0a76f726",
     "feature_drift_score": null,
     "performance_log_loss": null,
-    "validation_log_loss": 1.43525,
+    "validation_log_loss": 1.44799,
     "alert": 0,
-    "details_json": "{\"performance\":{\"validation_log_loss\":1.4352478089215768,\"performance_log_loss\":null,\"prediction_count\":0,\"performance_ratio\":null},\"feature\":{\"reason\":\"Fewer than 20 feature snapshots\"}}"
+    "details_json": "{\"performance\":{\"validation_log_loss\":1.4479911523130382,\"performance_log_loss\":null,\"prediction_count\":0,\"performance_ratio\":null},\"feature\":{\"reason\":\"Fewer than 20 feature snapshots\"}}"
   },
   "approved_predictions_count": 0,
   "predictions": []
