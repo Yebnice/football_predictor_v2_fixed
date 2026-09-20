@@ -75,13 +75,53 @@ def main() -> int:
 
     future_rows.sort(key=lambda row: row["kickoff_utc"])
 
-    latest_run = (store.list_ml_runs(limit=1) or [None])[0]
+    # Multiple GitHub Actions jobs can share the same database. Never let a
+    # publisher from one job observe another job's still-running run and turn
+    # the public manifest into a false zero-approved state. Select the most
+    # recent completed pipeline run only.
+    completed_runs = [
+        row for row in (store.list_ml_runs(limit=100) or [])
+        if str(row.get("status") or "").strip().casefold() == "completed"
+    ]
+    completed_runs.sort(
+        key=lambda row: float(row.get("completed_at") or row.get("started_at") or 0),
+        reverse=True,
+    )
+    latest_run = completed_runs[0] if completed_runs else None
+
+    selected_model_version = ""
+    selected_model = active
+    summary = {}
+    if latest_run:
+        try:
+            summary = json.loads(latest_run.get("summary_json") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            summary = {}
+        selected_model_version = str(
+            summary.get("model_version") or model_version or ""
+        )
+        if selected_model_version:
+            candidate_model = store.get_ml_model(selected_model_version)
+            if candidate_model:
+                selected_model = candidate_model
+
+    # Preserve the last known-good manifest during transient/failed AI runs.
+    # A completed run with zero approved predictions is not allowed to erase a
+    # previously published package.
+    if latest_run is None or int(summary.get("ai_approved") or 0) <= 0 or not future_rows:
+        if MANIFEST_PATH.exists():
+            print("No newly completed run with approved predictions; preserving existing ML manifest.")
+            return 0
+        raise RuntimeError(
+            "No completed background ML run with approved predictions is available to publish."
+        )
+
     drift = store.latest_ml_drift()
 
     metrics = {}
-    if active:
+    if selected_model:
         try:
-            metrics = json.loads(active.get("metrics_json") or "{}")
+            metrics = json.loads(selected_model.get("metrics_json") or "{}")
         except (TypeError, ValueError, json.JSONDecodeError):
             metrics = {}
 
@@ -90,10 +130,10 @@ def main() -> int:
         "generated_at": now.isoformat(),
         "source": "github_actions_background_ml",
         "model": {
-            "version": model_version or None,
-            "algorithm": active.get("algorithm") if active else None,
-            "trained_at": active.get("trained_at") if active else None,
-            "training_rows": active.get("training_rows", 0) if active else 0,
+            "version": selected_model_version or None,
+            "algorithm": selected_model.get("algorithm") if selected_model else None,
+            "trained_at": selected_model.get("trained_at") if selected_model else None,
+            "training_rows": selected_model.get("training_rows", 0) if selected_model else 0,
             "validation_log_loss": metrics.get("log_loss"),
             "calibration_ece": metrics.get("calibration_ece"),
         },
