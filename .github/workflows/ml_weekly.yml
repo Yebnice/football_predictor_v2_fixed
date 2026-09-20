@@ -4,15 +4,6 @@ on:
   schedule:
     - cron: "15 3 * * 1"
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "app/services/ml_pipeline.py"
-      - "app/services/ai_agent.py"
-      - "app/multi_provider.py"
-      - "app/data_providers.py"
-      - ".github/workflows/ml_weekly.yml"
-      - "scripts/publish_ml_manifest.py"
 
 permissions:
   contents: write
@@ -71,7 +62,7 @@ jobs:
         timeout-minutes: 10
         run: python scripts/run_ml_pipeline.py --mode weekly
       - name: Publish canonical ML manifest
-        if: always()
+        if: success()
         env:
           PYTHONPATH: ${{ github.workspace }}
           DB_PATH: ${{ secrets.DB_PATH }}
