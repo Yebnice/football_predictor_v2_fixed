@@ -39,12 +39,39 @@ def main() -> int:
     active = store.get_active_ml_model()
     model_version = str(active.get("model_version") or "") if active else ""
 
+    # Do not read approved predictions until the latest *completed*
+    # pipeline run has been identified, because another concurrent job may
+    # already have switched the active model while it is still running.
+    completed_runs = [
+        row for row in (store.list_ml_runs(limit=100) or [])
+        if str(row.get("status") or "").strip().casefold() == "completed"
+    ]
+    completed_runs.sort(
+        key=lambda row: float(row.get("completed_at") or row.get("started_at") or 0),
+        reverse=True,
+    )
+    latest_run = completed_runs[0] if completed_runs else None
+
+    selected_model_version = ""
+    selected_model = active
+    summary = {}
+    if latest_run:
+        try:
+            summary = json.loads(latest_run.get("summary_json") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            summary = {}
+        selected_model_version = str(summary.get("model_version") or "")
+        if selected_model_version:
+            candidate_model = store.get_ml_model(selected_model_version)
+            if candidate_model:
+                selected_model = candidate_model
+
     kwargs = {
         "limit": 5000,
         "statuses": ("approved",),
     }
-    if model_version:
-        kwargs["model_version"] = model_version
+    if selected_model_version:
+        kwargs["model_version"] = selected_model_version
 
     rows = store.list_ml_predictions(**kwargs)
     future_rows = []
@@ -74,36 +101,6 @@ def main() -> int:
         })
 
     future_rows.sort(key=lambda row: row["kickoff_utc"])
-
-    # Multiple GitHub Actions jobs can share the same database. Never let a
-    # publisher from one job observe another job's still-running run and turn
-    # the public manifest into a false zero-approved state. Select the most
-    # recent completed pipeline run only.
-    completed_runs = [
-        row for row in (store.list_ml_runs(limit=100) or [])
-        if str(row.get("status") or "").strip().casefold() == "completed"
-    ]
-    completed_runs.sort(
-        key=lambda row: float(row.get("completed_at") or row.get("started_at") or 0),
-        reverse=True,
-    )
-    latest_run = completed_runs[0] if completed_runs else None
-
-    selected_model_version = ""
-    selected_model = active
-    summary = {}
-    if latest_run:
-        try:
-            summary = json.loads(latest_run.get("summary_json") or "{}")
-        except (TypeError, ValueError, json.JSONDecodeError):
-            summary = {}
-        selected_model_version = str(
-            summary.get("model_version") or model_version or ""
-        )
-        if selected_model_version:
-            candidate_model = store.get_ml_model(selected_model_version)
-            if candidate_model:
-                selected_model = candidate_model
 
     # Preserve the last known-good manifest during transient/failed AI runs.
     # A completed run with zero approved predictions is not allowed to erase a
