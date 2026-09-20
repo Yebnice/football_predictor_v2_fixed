@@ -938,10 +938,47 @@ def run_background_pipeline(
                     "feature_drift_score": feature_score,
                     "drift_alert": result.drift_alert,
                 }
+                # Stratify the AI review pool by kickoff window. The old
+                # probability-only top-60 selection could spend the entire review
+                # budget on later 31-day fixtures, leaving only a few predictions
+                # approved for the next 24 hours/7 days even when the providers
+                # supplied many nearer-term matches.
+                review_pool: list[Fixture] = []
+                review_seen: set[str] = set()
+                review_now = _now()
+
+                def add_review_rows(rows: list[Fixture], limit: int) -> None:
+                    for item in sorted(rows, key=lambda x: x.date)[:max(0, int(limit))]:
+                        fid = str(item.fixture_id)
+                        if not fid or fid in review_seen:
+                            continue
+                        review_seen.add(fid)
+                        review_pool.append(item)
+
+                daily_rows = [
+                    fx for fx in forecast_fx
+                    if review_now <= fx.date <= review_now + timedelta(days=1)
+                ]
+                weekly_rows = [
+                    fx for fx in forecast_fx
+                    if review_now + timedelta(days=1) < fx.date <= review_now + timedelta(days=7)
+                ]
+                later_rows = [
+                    fx for fx in forecast_fx
+                    if review_now + timedelta(days=7) < fx.date <= review_now + timedelta(days=31)
+                ]
+
+                # Review the whole near-term daily window whenever possible,
+                # then enough additional weekly/monthly rows to keep the same
+                # maximum 60-review budget.
+                add_review_rows(daily_rows, 30)
+                add_review_rows(weekly_rows, 20)
+                add_review_rows(later_rows, 10)
+
                 agent_run = prediction_agent.review_fixtures(
-                    forecast_fx,
-                    candidate_limit=min(60, len(forecast_fx)),
-                    deep_evidence_limit=min(10, len(forecast_fx)),
+                    review_pool,
+                    candidate_limit=len(review_pool),
+                    deep_evidence_limit=min(10, len(review_pool)),
                     background_context=ai_context,
                 )
                 for fx in forecast_fx:
