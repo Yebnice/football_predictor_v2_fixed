@@ -71,7 +71,7 @@ jobs:
         timeout-minutes: 10
         run: python scripts/run_ml_pipeline.py --mode daily
       - name: Publish canonical ML manifest
-        if: always()
+        if: success()
         env:
           PYTHONPATH: ${{ github.workspace }}
           DB_PATH: ${{ secrets.DB_PATH }}
