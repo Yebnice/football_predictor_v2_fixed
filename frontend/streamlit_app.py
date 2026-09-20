@@ -1158,10 +1158,38 @@ except Exception as e:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_ml_manifest(url: str) -> dict:
-    response = httpx.get(url, timeout=15.0)
-    response.raise_for_status()
-    payload = response.json()
-    return payload if isinstance(payload, dict) else {}
+    """Load the canonical GitHub ML manifest with deployment-safe fallbacks.
+
+    A stale/incorrect Streamlit secret must not turn a valid published manifest
+    into an apparent zero-approved state. The canonical repository manifest is
+    tried first, followed by any configured override and a CDN copy.
+    """
+    canonical = "https://raw.githubusercontent.com/Yebnice/football_predictor_v2_fixed/main/data/latest_ml_manifest.json"
+    cdn = "https://cdn.jsdelivr.net/gh/Yebnice/football_predictor_v2_fixed@main/data/latest_ml_manifest.json"
+    urls = []
+    for candidate in (canonical, url, cdn):
+        candidate = str(candidate or "").strip()
+        if candidate and candidate not in urls:
+            urls.append(candidate)
+
+    errors = []
+    for candidate in urls:
+        try:
+            response = httpx.get(
+                candidate,
+                params={"t": int(datetime.now(timezone.utc).timestamp() // 60)},
+                timeout=15.0,
+                headers={"Accept": "application/json", "Cache-Control": "no-cache"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if isinstance(payload, dict) and isinstance(payload.get("predictions"), list):
+                return payload
+            errors.append(f"{candidate}: unexpected manifest shape")
+        except Exception as exc:
+            errors.append(f"{candidate}: {exc}")
+
+    raise RuntimeError(" | ".join(errors))
 
 
 # Background ML status
@@ -1190,6 +1218,7 @@ ml_metrics = {
 }
 approved_manifest_count = int(ml_manifest.get("approved_predictions_count") or 0)
 drift_label = "ALERT" if latest_ml_drift and bool(latest_ml_drift.get("alert")) else "OK"
+manifest_available = bool(ml_manifest)
 
 # Show how many background-approved fixtures are actually usable in each
 # package window, rather than confusing the raw provider fixture pool with
@@ -1219,9 +1248,7 @@ render_markdown(f"""
 <div style="background: var(--background-card-alt); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.75rem 1rem; margin: 1rem 0;">
     <strong>Background AI-approved fixtures:</strong>
     <span style="color: var(--text-secondary);">
-        Daily {approved_window_counts["Daily"]} ·
-        Weekly {approved_window_counts["Weekly"]} ·
-        Monthly {approved_window_counts["Monthly"]}
+        {"Manifest unavailable" if not manifest_available else f'Daily {approved_window_counts["Daily"]} · Weekly {approved_window_counts["Weekly"]} · Monthly {approved_window_counts["Monthly"]}'}
     </span>
 </div>
 """, unsafe_allow_html=True)
