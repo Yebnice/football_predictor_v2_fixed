@@ -1,33 +1,33 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-23T02:38:08.850647+00:00",
+  "generated_at": "2026-09-24T02:38:54.164247+00:00",
   "source": "github_actions_background_ml",
   "model": {
-    "version": "poisson-20260923023430-639f1c60",
+    "version": "poisson-20260924023127-20217633",
     "algorithm": "poisson_regression",
-    "trained_at": 1790130000.0,
+    "trained_at": 1790220000.0,
     "training_rows": 262,
-    "validation_log_loss": 1.4366515362459353,
-    "calibration_ece": 0.4428279368349438
+    "validation_log_loss": 1.4211421593673774,
+    "calibration_ece": 0.43408695368322336
   },
   "last_run": {
-    "id": "570f7fb8-1dbd-4e8f-b30a-d2ca4ce4d650",
+    "id": "3a501a6a-3907-4343-ab10-2ca472323c20",
     "run_type": "daily",
-    "started_at": 1790130000.0,
-    "completed_at": 1790130000.0,
+    "started_at": 1790220000.0,
+    "completed_at": 1790220000.0,
     "status": "completed",
-    "summary_json": "{\"collected_matches\":144,\"training_rows\":262,\"model_trained\":true,\"model_version\":\"poisson-20260923023430-639f1c60\",\"predictions_created\":88,\"ai_approved\":10,\"ai_reviewed\":10,\"ai_providers\":[\"groq\"],\"ai_review_errors\":[\"Gemini batch 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\",\"Gemini batch 2: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\"],\"settled_predictions\":287,\"validation_log_loss\":1.4366515362459353,\"calibration_ece\":0.4428279368349438,\"performance_log_loss\":null,\"feature_drift_score\":null,\"drift_alert\":false,\"errors\":[\"Gemini batch 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\",\"Gemini batch 2: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\"]}",
+    "summary_json": "{\"collected_matches\":184,\"training_rows\":262,\"model_trained\":true,\"model_version\":\"poisson-20260924023127-20217633\",\"predictions_created\":256,\"ai_approved\":10,\"ai_reviewed\":10,\"ai_providers\":[\"groq\"],\"ai_review_errors\":[\"Gemini batch 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\",\"Gemini batch 2: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\"],\"settled_predictions\":100,\"validation_log_loss\":1.4211421593673774,\"calibration_ece\":0.43408695368322336,\"performance_log_loss\":null,\"feature_drift_score\":null,\"drift_alert\":false,\"errors\":[\"Gemini batch 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\",\"Gemini batch 2: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\"]}",
     "errors_json": "[\"Gemini batch 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\",\"Gemini batch 2: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}\"]"
   },
   "drift": {
-    "id": "12fb4e7a-de2e-4dde-9e0d-b70eb7237e05",
-    "checked_at": 1790130000.0,
-    "model_version": "poisson-20260923023430-639f1c60",
+    "id": "49636133-a9e7-4f7f-a08e-0fa5c4c3f796",
+    "checked_at": 1790220000.0,
+    "model_version": "poisson-20260924023127-20217633",
     "feature_drift_score": null,
     "performance_log_loss": null,
-    "validation_log_loss": 1.43665,
+    "validation_log_loss": 1.42114,
     "alert": 0,
-    "details_json": "{\"performance\":{\"validation_log_loss\":1.4366515362459353,\"performance_log_loss\":null,\"prediction_count\":0,\"performance_ratio\":null},\"feature\":{\"reason\":\"Fewer than 20 feature snapshots\"}}"
+    "details_json": "{\"performance\":{\"validation_log_loss\":1.4211421593673774,\"performance_log_loss\":null,\"prediction_count\":0,\"performance_ratio\":null},\"feature\":{\"reason\":\"Fewer than 20 feature snapshots\"}}"
   },
   "approved_predictions_count": 10,
   "predictions": [
@@ -39,17 +39,18 @@
       "away_team": "Leeds United",
       "market": "Leeds United Goals",
       "selection": "Under 1.5",
-      "probability": 0.677269,
-      "fair_odds": 1.4765,
-      "model_probability": 0.677269,
-      "home_lambda": 2.26835,
-      "away_lambda": 1.15962,
+      "probability": 0.676152,
+      "fair_odds": 1.479,
+      "model_probability": 0.676152,
+      "home_lambda": 2.25164,
+      "away_lambda": 1.1627,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.84,
-      "ai_rationale": "Model probability 0.6773 is highest; selection under 1.5 for Leeds is consistent with data; approve.",
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.85,
+      "ai_rationale": "Model probability 0.6762 is highest; no contradictory info. Deep evidence missing xG and has no form data, flagged as missing_xg and no_form_data.",
       "risk_flags": [
-        "market_odds_missing"
+        "missing_xg",
+        "no_form_data"
       ],
       "reviewers": [
         "groq"
@@ -61,19 +62,20 @@
       "league": "English Premier League 2026/27",
       "home_team": "Arsenal FC",
       "away_team": "Leeds United FC",
-      "market": "Draw No Bet",
-      "selection": "Home",
-      "probability": 0.73268,
-      "fair_odds": 1.3649,
-      "model_probability": 0.73268,
-      "home_lambda": 1.84148,
-      "away_lambda": 1.04024,
+      "market": "Double Chance",
+      "selection": "12",
+      "probability": 0.748523,
+      "fair_odds": 1.336,
+      "model_probability": 0.748523,
+      "home_lambda": 1.81425,
+      "away_lambda": 1.04611,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.87,
-      "ai_rationale": "Model probability 0.7327 is highest; no contradictory data; approve Draw No Bet Home.",
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7485 is highest; Double Chance 12 aligns with strong Arsenal form and no evidence against; approve while noting missing market odds and missing normalized xG.",
       "risk_flags": [
-        "market_odds_missing"
+        "missing_market_odds",
+        "missing_xg"
       ],
       "reviewers": [
         "groq"
@@ -87,39 +89,18 @@
       "away_team": "Brighton & Hove Albion FC",
       "market": "Double Chance",
       "selection": "12",
-      "probability": 0.747753,
-      "fair_odds": 1.3373,
-      "model_probability": 0.747753,
-      "home_lambda": 1.47246,
-      "away_lambda": 1.74038,
+      "probability": 0.748259,
+      "fair_odds": 1.3364,
+      "model_probability": 0.748259,
+      "home_lambda": 1.47359,
+      "away_lambda": 1.74767,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.92,
-      "ai_rationale": "Model probability 0.7478 is the highest; deep evidence provides no conflict for Double Chance 12, so the candidate is acceptable.",
-      "risk_flags": [],
-      "reviewers": [
-        "groq"
-      ]
-    },
-    {
-      "fixture_id": "openfootball-2026_27-en.1-53",
-      "kickoff_utc": "2026-10-10T15:00:00+00:00",
-      "league": "English Premier League 2026/27",
-      "home_team": "Ipswich Town FC",
-      "away_team": "Fulham FC",
-      "market": "Double Chance",
-      "selection": "1X",
-      "probability": 0.730823,
-      "fair_odds": 1.3683,
-      "model_probability": 0.730823,
-      "home_lambda": 1.50995,
-      "away_lambda": 1.11935,
-      "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.86,
-      "ai_rationale": "Model probability 0.7308 is highest; evidence aligns with Double Chance 1X; approve.",
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7483 is highest; Double Chance 12 covers likely outcomes given Brighton superiority and no contradictory data; approve with missing market odds and missing normalized xG flagged.",
       "risk_flags": [
-        "market_odds_missing"
+        "missing_market_odds",
+        "missing_xg"
       ],
       "reviewers": [
         "groq"
@@ -133,16 +114,44 @@
       "away_team": "AFC Bournemouth",
       "market": "Double Chance",
       "selection": "1X",
-      "probability": 0.749671,
-      "fair_odds": 1.3339,
-      "model_probability": 0.749671,
-      "home_lambda": 1.69857,
-      "away_lambda": 1.16474,
+      "probability": 0.746594,
+      "fair_odds": 1.3394,
+      "model_probability": 0.746594,
+      "home_lambda": 1.68216,
+      "away_lambda": 1.16701,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.92,
-      "ai_rationale": "Model probability 0.7497 is the highest among candidates and no deep evidence contradicts the Double Chance 1X selection; data are reliable.",
-      "risk_flags": [],
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7466 is highest; Double Chance 1X (home win or draw) fits Chelsea's moderate form and no evidence against; approve, noting missing market odds and missing normalized xG.",
+      "risk_flags": [
+        "missing_market_odds",
+        "missing_xg"
+      ],
+      "reviewers": [
+        "groq"
+      ]
+    },
+    {
+      "fixture_id": "openfootball-2026_27-en.1-53",
+      "kickoff_utc": "2026-10-10T15:00:00+00:00",
+      "league": "English Premier League 2026/27",
+      "home_team": "Ipswich Town FC",
+      "away_team": "Fulham FC",
+      "market": "Total Goals",
+      "selection": "Over 1.5",
+      "probability": 0.748853,
+      "fair_odds": 1.3354,
+      "model_probability": 0.748853,
+      "home_lambda": 1.50172,
+      "away_lambda": 1.11924,
+      "candidate_index": 0,
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7489 is highest; expected total goals (~2.6) support Over 1.5; no contradictory evidence from form or xG; approve despite missing market odds and missing normalized xG values.",
+      "risk_flags": [
+        "missing_market_odds",
+        "missing_xg"
+      ],
       "reviewers": [
         "groq"
       ]
@@ -155,16 +164,18 @@
       "away_team": "Brentford FC",
       "market": "Double Chance",
       "selection": "12",
-      "probability": 0.7369,
-      "fair_odds": 1.357,
-      "model_probability": 0.7369,
-      "home_lambda": 1.60569,
-      "away_lambda": 1.41368,
+      "probability": 0.737073,
+      "fair_odds": 1.3567,
+      "model_probability": 0.737073,
+      "home_lambda": 1.60649,
+      "away_lambda": 1.41674,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.92,
-      "ai_rationale": "Model probability 0.7369 is highest; no evidence conflicts with the Double Chance 12 selection.",
-      "risk_flags": [],
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.88,
+      "ai_rationale": "Model probability 0.7371 is highest; no conflicting data. Deep evidence lacks xG values, flagged as missing_xg.",
+      "risk_flags": [
+        "missing_xg"
+      ],
       "reviewers": [
         "groq"
       ]
@@ -177,16 +188,18 @@
       "away_team": "Tottenham Hotspur FC",
       "market": "Double Chance",
       "selection": "12",
-      "probability": 0.744345,
-      "fair_odds": 1.3435,
-      "model_probability": 0.744345,
-      "home_lambda": 1.77428,
-      "away_lambda": 1.08063,
+      "probability": 0.74415,
+      "fair_odds": 1.3438,
+      "model_probability": 0.74415,
+      "home_lambda": 1.77237,
+      "away_lambda": 1.08581,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.92,
-      "ai_rationale": "Model probability 0.7443 is highest; no contradictory evidence for Double Chance 12, making it a valid selection.",
-      "risk_flags": [],
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7441 is highest; no contradictory evidence. Deep evidence lacks xG values, flagged as missing_xg.",
+      "risk_flags": [
+        "missing_xg"
+      ],
       "reviewers": [
         "groq"
       ]
@@ -199,16 +212,18 @@
       "away_team": "Nottingham Forest FC",
       "market": "Double Chance",
       "selection": "12",
-      "probability": 0.73795,
-      "fair_odds": 1.3551,
-      "model_probability": 0.73795,
-      "home_lambda": 1.54737,
-      "away_lambda": 1.51574,
+      "probability": 0.73727,
+      "fair_odds": 1.3564,
+      "model_probability": 0.73727,
+      "home_lambda": 1.53806,
+      "away_lambda": 1.51224,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.92,
-      "ai_rationale": "Model probability 0.738 is the top candidate; deep evidence does not dispute the Double Chance 12 choice.",
-      "risk_flags": [],
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.88,
+      "ai_rationale": "Model probability 0.7373 is highest; evidence aligns. Deep evidence lacks xG values, flagged as missing_xg.",
+      "risk_flags": [
+        "missing_xg"
+      ],
       "reviewers": [
         "groq"
       ]
@@ -220,18 +235,19 @@
       "home_team": "Hull City AFC",
       "away_team": "Everton FC",
       "market": "Double Chance",
-      "selection": "12",
-      "probability": 0.734833,
-      "fair_odds": 1.3609,
-      "model_probability": 0.734833,
-      "home_lambda": 1.67158,
-      "away_lambda": 1.14198,
+      "selection": "1X",
+      "probability": 0.746147,
+      "fair_odds": 1.3402,
+      "model_probability": 0.746147,
+      "home_lambda": 1.64433,
+      "away_lambda": 1.14474,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.88,
-      "ai_rationale": "Model probability 0.7348 is the highest among candidates and no evidence contradicts the Double Chance 12 selection; approve.",
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.7461 is highest; Double Chance 1X matches Hull City's solid recent form and no contradictory evidence; approve with missing market odds and missing normalized xG noted.",
       "risk_flags": [
-        "market_odds_missing"
+        "missing_market_odds",
+        "missing_xg"
       ],
       "reviewers": [
         "groq"
@@ -245,17 +261,17 @@
       "away_team": "Manchester City FC",
       "market": "Double Chance",
       "selection": "1X",
-      "probability": 0.706169,
-      "fair_odds": 1.4161,
-      "model_probability": 0.706169,
-      "home_lambda": 1.80071,
-      "away_lambda": 1.4167,
+      "probability": 0.701027,
+      "fair_odds": 1.4265,
+      "model_probability": 0.701027,
+      "home_lambda": 1.79202,
+      "away_lambda": 1.43271,
       "candidate_index": 0,
-      "model_version": "poisson-20260923023430-639f1c60",
-      "ai_review_score": 0.85,
-      "ai_rationale": "Model probability 0.7062 is highest; no conflicting information; approve Double Chance 1X.",
+      "model_version": "poisson-20260924023127-20217633",
+      "ai_review_score": 0.9,
+      "ai_rationale": "Model probability 0.701 is highest; consistent with team form. Deep evidence lacks xG values, flagged as missing_xg.",
       "risk_flags": [
-        "market_odds_missing"
+        "missing_xg"
       ],
       "reviewers": [
         "groq"
