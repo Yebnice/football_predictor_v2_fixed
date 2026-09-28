@@ -159,7 +159,20 @@ class TestMLLifecycle(unittest.TestCase):
         settle_predictions(self.store, self.history(2, 2))
         loss, _, _, details = performance_and_drift(self.store, "model")
         self.assertEqual(details["prediction_count"], 1)
-        self.assertAlmostEqual(loss, -math.log(rows[0]["probability"]))
+        internal = {
+            row["selection"]: row
+            for row in self.store.list_ml_predictions(
+                model_version="model",
+                fixture_id="match",
+            )
+            if row["market"] == "1X2" and row["settled_at"] is not None
+        }
+        self.assertIn("Draw", internal)
+        self.assertTrue(math.isfinite(loss))
+        self.assertAlmostEqual(
+            loss,
+            -math.log(internal["Draw"]["probability"]),
+        )
 
     def test_regeneration_requires_fresh_approval_and_clears_old_candidates(self):
         self.generate("BTTS", "Yes")
