@@ -30,6 +30,14 @@ class TestConfigSecurity(unittest.TestCase):
         with self.assertRaises(ValueError):
             Settings()
 
+    def test_blank_or_padded_placeholder_secrets_are_rejected_in_production(self):
+        valid = {"rng_salt": "secure-random-salt-12345", "auth_jwt_secret": "secure-jwt-secret-67890"}
+        for field, placeholder in (("rng_salt", "change-me"), ("auth_jwt_secret", "change-me-too")):
+            for value in ("", " ", f" {placeholder} "):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaisesRegex(ValueError, field.upper()):
+                        Settings(_env_file=None, app_env="production", **{**valid, field: value})
+
     def test_secure_settings_no_warning(self):
         """Test that secure values don't trigger warnings."""
         os.environ['APP_ENV'] = 'production'
