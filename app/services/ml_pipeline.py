@@ -16,7 +16,7 @@ from sklearn.preprocessing import StandardScaler
 
 from ..config import settings
 from ..engine import FootballProbabilityEngine, MAX_TIP_PROBABILITY
-from ..schemas import Fixture
+from ..schemas import FINISHED_STATUSES, Fixture
 from ..store import Store
 
 logger = logging.getLogger("football_predictor.ml_pipeline")
@@ -104,11 +104,15 @@ def _fixture_key(fx: Fixture) -> tuple[str, str, str, str]:
 
 def _is_finished(fx: Fixture) -> bool:
     status = str(fx.status or "").strip().casefold()
-    return status in {
-        "finished", "ft", "final", "completed", "aet", "pen",
-        "match finished", "match finished after extra time",
-        "match finished after penalty",
-    } and fx.home_score is not None and fx.away_score is not None
+    return status in FINISHED_STATUSES and fx.home_score is not None and fx.away_score is not None
+
+
+def _has_final_score(row: dict[str, Any]) -> bool:
+    return (
+        str(row.get("status") or "").strip().casefold() in FINISHED_STATUSES
+        and row.get("home_score") is not None
+        and row.get("away_score") is not None
+    )
 
 
 def _history_stats(
@@ -191,6 +195,7 @@ def _league_stats(history: list[dict[str, Any]], league: str, before: str, n: in
 
 
 def build_features(fx: Fixture, history: list[dict[str, Any]]) -> dict[str, float]:
+    history = [row for row in history if _has_final_score(row)]
     before = fx.date.astimezone(timezone.utc).isoformat()
     home = _history_stats(history, fx.home_team, before, n=5)
     away = _history_stats(history, fx.away_team, before, n=5)
@@ -305,7 +310,7 @@ def _load_active_artifact(store: Store) -> tuple[str, dict[str, Any], dict[str, 
 def _build_training_rows(history: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
     finished = [
         row for row in history
-        if row.get("home_score") is not None and row.get("away_score") is not None
+        if _has_final_score(row)
     ]
     finished.sort(key=lambda r: str(r.get("kickoff_utc", "")))
 
@@ -479,10 +484,7 @@ def _collect_from_provider(
                 exc,
             )
 
-    def has_score(fx: Fixture) -> bool:
-        return fx.home_score is not None and fx.away_score is not None
-
-    scored_count = sum(1 for fx in rows if has_score(fx))
+    scored_count = sum(1 for fx in rows if _is_finished(fx))
 
     # If the composite result contains too few historical scores, query each
     # child provider directly. This bypasses provider-level deduplication and
@@ -600,6 +602,10 @@ def create_background_predictions(
         status = str(fx.status or "").casefold()
         if fx.date <= _now() or status not in {"scheduled", "not started", "ns", "tbd", "upcoming", ""}:
             continue
+        store.reset_ml_prediction_review(
+            fixture_id=fx.fixture_id,
+            model_version=model_version,
+        )
         features = build_features(fx, history)
         vector = _feature_vector(features)
         home_lambda, away_lambda = _predict_artifact(artifact, vector)
@@ -672,10 +678,13 @@ def settle_predictions(store: Store, history: list[dict[str, Any]]) -> int:
             str(row.get("kickoff_utc") or ""),
         ): row
         for row in history
-        if row.get("home_score") is not None and row.get("away_score") is not None
+        if _has_final_score(row)
     }
     settled = 0
-    for prediction in store.list_ml_predictions(limit=10000, statuses=("approved", "internal", "pending_ai")):
+    for prediction in store.list_ml_predictions(
+        limit=10000,
+        statuses=("approved", "internal", "pending_ai", "rejected_ai"),
+    ):
         key = (str(prediction["fixture_id"]), str(prediction["kickoff_utc"]))
         row = by_key.get(key)
         if not row:
@@ -690,7 +699,7 @@ def settle_predictions(store: Store, history: list[dict[str, Any]]) -> int:
         elif market == "BTTS":
             actual = "Yes" if hs > 0 and aw > 0 else "No"
         elif market == "Double Chance":
-            actual = "1X" if (hs >= aw) else "X2" if aw >= hs else "12"
+            actual = "1X" if hs > aw else "X2" if aw > hs else "12"
         elif market == "Draw No Bet":
             actual = "Home" if hs > aw else "Away" if aw > hs else "Void"
         elif market == "Total Goals":
@@ -711,7 +720,17 @@ def settle_predictions(store: Store, history: list[dict[str, Any]]) -> int:
             actual = None
         if actual is None:
             continue
-        won = actual == selection
+        if market == "Double Chance":
+            winning = {
+                "1X": hs >= aw,
+                "X2": aw >= hs,
+                "12": hs != aw,
+            }
+            if selection not in winning:
+                continue
+            won = winning[selection]
+        else:
+            won = None if actual == "Void" else actual == selection
         store.settle_ml_prediction(
             prediction_id=str(prediction["id"]),
             actual_outcome=actual,
@@ -736,8 +755,8 @@ def performance_and_drift(store: Store, model_version: str | None) -> tuple[floa
         metrics = {}
 
     settled = [
-        row for row in store.list_ml_predictions(limit=10000, statuses=("internal", "settled_internal"))
-        if str(row.get("model_version")) == model_version and row.get("settled_at")
+        row for row in store.list_ml_predictions(limit=10000, model_version=model_version)
+        if row.get("market") == "1X2" and row.get("settled_at") is not None
     ]
     if settled:
         by_fixture: dict[str, dict[str, Any]] = {}

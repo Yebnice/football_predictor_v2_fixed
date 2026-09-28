@@ -37,6 +37,7 @@ import uuid
 from typing import Any
 from . import db as _db
 from .migrations import run_migrations
+from .schemas import FINISHED_STATUSES
 
 
 class Store:
@@ -166,6 +167,9 @@ class Store:
         params: list[Any] = []
         if finished_only:
             where.append("home_score IS NOT NULL AND away_score IS NOT NULL")
+            placeholders = ",".join("?" for _ in FINISHED_STATUSES)
+            where.append(f"LOWER(TRIM(status)) IN ({placeholders})")
+            params.extend(sorted(FINISHED_STATUSES))
         if since_utc:
             where.append("kickoff_utc >= ?")
             params.append(since_utc)
@@ -176,6 +180,23 @@ class Store:
         params.append(max(1, int(limit)))
         with self._connect() as conn:
             return [dict(row) for row in conn.execute(sql, tuple(params)).fetchall()]
+
+    def reset_ml_prediction_review(self, *, fixture_id: str, model_version: str) -> None:
+        """Withdraw previous forecasts before regenerating a fixture's candidates."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE ml_predictions
+                SET status = CASE WHEN market = '1X2' THEN 'internal' ELSE 'rejected_ai' END,
+                    ai_approved = 0,
+                    ai_review_score = NULL,
+                    ai_rationale = NULL,
+                    risk_flags_json = NULL,
+                    reviewers_json = NULL
+                WHERE fixture_id = ? AND model_version = ? AND settled_at IS NULL
+                """,
+                (fixture_id, model_version),
+            )
 
     def save_ml_feature_snapshot(
         self,
@@ -320,7 +341,14 @@ class Store:
                     model_probability=excluded.model_probability,
                     home_lambda=excluded.home_lambda,
                     away_lambda=excluded.away_lambda,
-                    candidate_index=excluded.candidate_index
+                    candidate_index=excluded.candidate_index,
+                    status=excluded.status,
+                    ai_approved=0,
+                    ai_review_score=NULL,
+                    ai_rationale=NULL,
+                    risk_flags_json=NULL,
+                    reviewers_json=NULL
+                WHERE ml_predictions.settled_at IS NULL
                 """,
                 (
                     prediction_id, fixture_id, model_version, predicted_at, kickoff_utc,
@@ -378,7 +406,6 @@ class Store:
         risk_flags: list[str],
         reviewers: list[str],
     ) -> None:
-        now = time.time()
         with self._connect() as conn:
             conn.execute(
                 """
@@ -411,14 +438,6 @@ class Store:
                     selection,
                 ),
             )
-            conn.execute(
-                """
-                UPDATE ml_predictions
-                SET ai_approved = 0
-                WHERE fixture_id = ? AND model_version = ? AND market = '1X2'
-                """,
-                (fixture_id, model_version),
-            )
 
     def reject_pending_ml_predictions(self, *, fixture_id: str, model_version: str) -> None:
         with self._connect() as conn:
@@ -447,6 +466,7 @@ class Store:
                     status = CASE
                         WHEN status = 'internal' THEN 'settled_internal'
                         WHEN status = 'approved' THEN 'settled'
+                        WHEN status IN ('pending_ai', 'rejected_ai') THEN 'settled_rejected'
                         ELSE status
                     END
                 WHERE id = ?
