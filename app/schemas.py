@@ -2,6 +2,13 @@ from dataclasses import dataclass, field
 from typing import Any
 from datetime import datetime
 
+# Provider aliases for a completed match with a final score.
+FINISHED_STATUSES = frozenset({
+    "finished", "ft", "final", "completed", "aet", "pen",
+    "match finished", "match finished after extra time", "match finished after penalty",
+})
+
+
 @dataclass
 class TeamForm:
     matches: int = 0

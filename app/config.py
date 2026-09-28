@@ -109,9 +109,9 @@ class Settings(BaseSettings):
         """Reject known placeholder secrets in production; allow them in development."""
         if self.app_env.strip().lower() == "production":
             insecure = []
-            if self.rng_salt in {"change-me", "change-me-to-secure-random-string"}:
+            if not self.rng_salt.strip() or self.rng_salt.strip() in {"change-me", "change-me-to-secure-random-string"}:
                 insecure.append("RNG_SALT")
-            if self.auth_jwt_secret in {"change-me-too", "change-me-to-secure-random-jwt-secret"}:
+            if not self.auth_jwt_secret.strip() or self.auth_jwt_secret.strip() in {"change-me-too", "change-me-to-secure-random-jwt-secret"}:
                 insecure.append("AUTH_JWT_SECRET")
             if insecure:
                 raise ValueError(
